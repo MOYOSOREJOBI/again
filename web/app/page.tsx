@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { summarizeScoreSeverity } from '../lib/risk'
 import { navItemsForRole, type Role, type Tab } from '../lib/navigation'
 
@@ -8,6 +8,8 @@ const API_GATEWAY = 'http://localhost:8080'
 const API_QUERY = 'http://localhost:8085'
 const API_ALERTS = 'http://localhost:8083'
 const API_GOV = 'http://localhost:8084'
+
+const POLL_INTERVAL = 15_000
 
 type Alert = { id: number; symbol: string; status: string; ts: string; created_at?: string }
 type Score = { id: number; symbol: string; score: number; severity: string; ts: string }
@@ -25,25 +27,34 @@ export default function Page() {
   const [models, setModels] = useState<Model[]>([])
   const [liveAlerts, setLiveAlerts] = useState<string[]>([])
   const [sseState, setSseState] = useState<'connected' | 'reconnecting' | 'failed'>('reconnecting')
-  const [retries, setRetries] = useState(0)
+
+  const userRef = useRef<User>(null)
+  const retriesRef = useRef(0)
   const retryTimer = useRef<number | null>(null)
 
   const fetchUser = useCallback(async () => {
     try {
       const res = await fetch(`${API_GATEWAY}/me`, { credentials: 'include' })
-      setUser(res.ok ? await res.json() : null)
+      const u = res.ok ? await res.json() : null
+      userRef.current = u
+      setUser(u)
     } catch {
+      userRef.current = null
       setUser(null)
     }
   }, [])
 
   const fetchData = useCallback(async () => {
-    const [a, s] = await Promise.all([
-      fetch(`${API_QUERY}/alerts`, { credentials: 'include' }),
-      fetch(`${API_QUERY}/scores`, { credentials: 'include' }),
-    ])
-    if (a.ok) setAlerts(await a.json())
-    if (s.ok) setScores(await s.json())
+    try {
+      const [a, s] = await Promise.all([
+        fetch(`${API_QUERY}/alerts`, { credentials: 'include' }),
+        fetch(`${API_QUERY}/scores`, { credentials: 'include' }),
+      ])
+      if (a.ok) setAlerts(await a.json())
+      if (s.ok) setScores(await s.json())
+    } catch {
+      // network error — silently skip this poll cycle
+    }
   }, [])
 
   const fetchModels = useCallback(async () => {
@@ -55,22 +66,31 @@ export default function Page() {
     }
   }, [])
 
+  // Initial load — runs once
   useEffect(() => {
+    let cancelled = false
     const init = async () => {
       setLoading(true)
       await fetchUser()
       await fetchData()
       await fetchModels()
-      setLoading(false)
+      if (!cancelled) setLoading(false)
     }
     init()
+    return () => { cancelled = true }
+  }, [fetchUser, fetchData, fetchModels])
+
+  // Polling — runs independently, uses ref for user check
+  useEffect(() => {
+    if (loading) return
     const id = window.setInterval(() => {
       fetchData()
-      if (user) fetchModels()
-    }, 6000)
+      if (userRef.current) fetchModels()
+    }, POLL_INTERVAL)
     return () => window.clearInterval(id)
-  }, [fetchUser, fetchData, fetchModels, user])
+  }, [loading, fetchData, fetchModels])
 
+  // SSE — stable effect, uses refs for retry logic
   useEffect(() => {
     if (!user) return
     let es: EventSource | null = null
@@ -78,20 +98,21 @@ export default function Page() {
 
     const connect = () => {
       if (cancelled) return
-      setSseState(retries > 0 ? 'reconnecting' : 'reconnecting')
+      setSseState('reconnecting')
       es = new EventSource(`${API_ALERTS}/sse/alerts`)
       es.onopen = () => {
         setSseState('connected')
-        setRetries(0)
+        retriesRef.current = 0
       }
       es.addEventListener('alert', (evt) => {
         setLiveAlerts(prev => [evt.data, ...prev].slice(0, 30))
-        fetchData()
       })
       es.onerror = () => {
         es?.close()
-        const next = Math.min(30000, 1000 * Math.pow(2, Math.min(retries, 5)))
-        setRetries(r => r + 1)
+        if (cancelled) return
+        const r = retriesRef.current
+        const next = Math.min(30000, 1000 * Math.pow(2, Math.min(r, 5)))
+        retriesRef.current = r + 1
         setSseState(next >= 30000 ? 'failed' : 'reconnecting')
         retryTimer.current = window.setTimeout(connect, next)
       }
@@ -103,7 +124,7 @@ export default function Page() {
       if (retryTimer.current) window.clearTimeout(retryTimer.current)
       es?.close()
     }
-  }, [user, fetchData, retries])
+  }, [user])
 
   const navItems = useMemo(() => (user ? navItemsForRole(user.role) : []), [user])
 
@@ -129,6 +150,7 @@ export default function Page() {
 
   const logout = async () => {
     await fetch(`${API_GATEWAY}/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => null)
+    userRef.current = null
     setUser(null)
     setTab('overview')
   }
@@ -137,7 +159,7 @@ export default function Page() {
     setError('')
     const res = await fetch(`${API_ALERTS}/alerts/${id}/ack`, { method: 'POST', credentials: 'include' })
     if (!res.ok) {
-      setError(`Acknowledge failed (${res.status})`) 
+      setError(`Acknowledge failed (${res.status})`)
       return
     }
     await fetchData()
@@ -206,7 +228,7 @@ function LandingPage({ onLogin, loggingIn, error }: { onLogin: (e: string, p: st
   )
 }
 
-function Overview({ alerts, scores, liveAlerts }: { alerts: Alert[]; scores: Score[]; liveAlerts: string[] }) {
+const Overview = memo(function Overview({ alerts, scores, liveAlerts }: { alerts: Alert[]; scores: Score[]; liveAlerts: string[] }) {
   const open = alerts.filter(a => a.status === 'open').length
   const { critical, high } = summarizeScoreSeverity(scores)
   const symbols = new Set(scores.map(s => s.symbol)).size
@@ -238,9 +260,9 @@ function Overview({ alerts, scores, liveAlerts }: { alerts: Alert[]; scores: Sco
       </section>
     </main>
   )
-}
+})
 
-function AlertsView({ alerts, role, onAck }: { alerts: Alert[]; role: Role; onAck: (id: number) => Promise<void> }) {
+const AlertsView = memo(function AlertsView({ alerts, role, onAck }: { alerts: Alert[]; role: Role; onAck: (id: number) => Promise<void> }) {
   const canAck = role === 'admin' || role === 'analyst'
   return (
     <section className="glass-panel">
@@ -258,9 +280,9 @@ function AlertsView({ alerts, role, onAck }: { alerts: Alert[]; role: Role; onAc
       </div>
     </section>
   )
-}
+})
 
-function ScoresView({ scores }: { scores: Score[] }) {
+const ScoresView = memo(function ScoresView({ scores }: { scores: Score[] }) {
   return (
     <section className="glass-panel">
       <h3>Anomaly Scores</h3>
@@ -270,9 +292,9 @@ function ScoresView({ scores }: { scores: Score[] }) {
       </div>
     </section>
   )
-}
+})
 
-function GovernanceView({ models }: { models: Model[] }) {
+const GovernanceView = memo(function GovernanceView({ models }: { models: Model[] }) {
   return (
     <section className="glass-panel">
       <h3>Governance</h3>
@@ -282,4 +304,4 @@ function GovernanceView({ models }: { models: Model[] }) {
       </div>
     </section>
   )
-}
+})
