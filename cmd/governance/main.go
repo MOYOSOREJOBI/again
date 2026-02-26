@@ -51,8 +51,42 @@ func main() {
 	r.Use(middleware.CORS)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", readinessHandler(pool))
+	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !rbac.Allowed(claims.Role, "read") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		rows, err := pool.Query(ctx, `SELECT model_name,model_version,artifact_hash,artifact_path,feature_set_version,coalesce(calibration_version,''),deployed_at FROM model_deployments WHERE status='deployed' ORDER BY deployed_at DESC NULLS LAST`)
+		if err != nil {
+			logger.Error("load active models failed", map[string]any{"error": err.Error()})
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		out := map[string]any{"models": []map[string]any{}}
+		models := []map[string]any{}
+		for rows.Next() {
+			var name, version, artifactHash, artifactPath, featureSetVersion, calibrationVersion string
+			var deployedAt any
+			if err := rows.Scan(&name, &version, &artifactHash, &artifactPath, &featureSetVersion, &calibrationVersion, &deployedAt); err != nil {
+				continue
+			}
+			models = append(models, map[string]any{
+				"model_name":          name,
+				"model_version":       version,
+				"artifact_hash":       artifactHash,
+				"artifact_path":       artifactPath,
+				"feature_set_version": featureSetVersion,
+				"calibration_version": calibrationVersion,
+				"deployed_at":         deployedAt,
+			})
+		}
+		out["models"] = models
+		httpx.JSON(w, http.StatusOK, out)
+	})
 
-	r.With(middleware.RateLimit(func(r *http.Request) string { return "gov:" + r.RemoteAddr }, 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("gov"), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -82,7 +116,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	r.With(middleware.RateLimit(func(r *http.Request) string { return "replay:" + r.RemoteAddr }, 5, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow"), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -218,3 +252,15 @@ func readinessHandler(p pinger) http.HandlerFunc {
 }
 
 var errNotReady = errors.New("not ready")
+
+func rateLimitSubjectKey(prefix string) func(*http.Request) string {
+	return func(r *http.Request) string {
+		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
+			return prefix + ":" + authz
+		}
+		if c, err := r.Cookie("sentinel_token"); err == nil && c.Value != "" {
+			return prefix + ":cookie:" + c.Value
+		}
+		return prefix + ":ip:" + r.RemoteAddr
+	}
+}
