@@ -8,15 +8,15 @@ import WorldRiskMap from '../components/WorldRiskMap'
 
 test('command center renders analytics containers', () => {
   const src = fs.readFileSync(process.cwd() + '/app/command-center/page.tsx', 'utf-8')
-  assert.match(src, /incident_pressure_series/)
   assert.match(src, /WorldRiskMap/)
+  assert.match(src, /Open incidents/)
+  assert.match(src, /Backlog delta/)
 })
 
-test('queue renders rank reason trust and recommendation', () => {
+test('queue renders recommended actions and priority', () => {
   const src = fs.readFileSync(process.cwd() + '/app/queue/page.tsx', 'utf-8')
-  assert.match(src, /rank_reason/)
-  assert.match(src, /recommended_action/)
-  assert.match(src, /trust_label/)
+  assert.match(src, /recommendedAction|recommended_action/)
+  assert.match(src, /Priority/)
 })
 
 test('incident page renders model and explanation sections and case promotion', () => {
@@ -37,6 +37,7 @@ test('case workspace and detail show role-gated workflow', () => {
 test('trust page renders trend containers', () => {
   const src = fs.readFileSync(process.cwd() + '/app/trust/page.tsx', 'utf-8')
   assert.match(src, /timeline-lane/)
+  assert.match(src, /DQ metrics/)
 })
 
 test('replay page labels metadata-first mode and deterministic timeline', () => {

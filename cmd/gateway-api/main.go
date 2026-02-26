@@ -33,6 +33,7 @@ func main() {
 	defer pool.Close()
 	priv, _ := auth.ReadPrivate(cfg.JWTPrivateKey)
 	pub, _ := auth.ReadPublic(cfg.JWTPublicKey)
+	secure := strings.ToLower(os.Getenv("APP_ENV")) != "local"
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -54,6 +55,7 @@ func main() {
 	})
 
 	r.With(middleware.RateLimit(func(r *http.Request) string {
+		return "login:" + clientIP(r)
 		var in struct{ Email string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		return "login:" + r.RemoteAddr + ":" + strings.ToLower(in.Email)
@@ -117,6 +119,13 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	_ = srv.Shutdown(context.Background())
+}
+
+func clientIP(r *http.Request) string {
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		return strings.Split(xff, ",")[0]
+	}
+	return r.RemoteAddr
 }
 
 func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
