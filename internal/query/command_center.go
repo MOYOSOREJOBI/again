@@ -10,6 +10,7 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 	var open, high int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE status in ('open','ack')`).Scan(&open)
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE severity_band in ('high','critical') AND status in ('open','ack')`).Scan(&high)
+
 	topIncidents := []map[string]any{}
 	rows, err := db.Query(ctx, `SELECT id,primary_symbol,coalesce(priority_score,0),coalesce(composite_risk,0),severity_band FROM incidents WHERE status in ('open','ack') ORDER BY priority_score DESC LIMIT 5`)
 	if err == nil {
@@ -23,6 +24,7 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 			}
 		}
 	}
+
 	countries := []map[string]any{}
 	cr, err := db.Query(ctx, `SELECT coalesce(m.country_code,'XX'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1 ORDER BY 2 DESC LIMIT 5`)
 	if err == nil {
@@ -35,6 +37,7 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 			}
 		}
 	}
+
 	industries := []map[string]any{}
 	ir, err := db.Query(ctx, `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1 ORDER BY 2 DESC LIMIT 5`)
 	if err == nil {
@@ -47,10 +50,6 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 			}
 		}
 	}
+
 	return map[string]any{"timeWindow": timeWindow, "openIncidents": open, "highRiskCount": high, "backlogDelta": high - open, "topIncidents": topIncidents, "topCountries": countries, "topIndustries": industries, "trust": map[string]any{"state": "stable"}}, nil
-func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool) (map[string]any, error) {
-	var open, high int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE status in ('open','ack')`).Scan(&open)
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE severity_band in ('high','critical') AND status in ('open','ack')`).Scan(&high)
-	return map[string]any{"openIncidents": open, "highRiskCount": high, "trust": map[string]any{"state": "stable"}}, nil
 }

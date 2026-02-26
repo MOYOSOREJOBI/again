@@ -36,6 +36,7 @@ LOOP_RUNNING = Gauge('inference_loop_running', 'Inference consumer loop running 
 running = True
 kafka_ready = False
 model_bundle: dict | None = None
+model_loaded = False
 
 
 def load_models() -> dict:
@@ -97,7 +98,7 @@ def healthz():
 
 @app.get('/readyz')
 def readyz():
-    ready = kafka_ready and model_bundle is not None
+    ready = kafka_ready and model_loaded
     return (jsonify({'ready': ready, 'fallback_mode': True if not model_bundle else (model_bundle['anomaly'].degraded or model_bundle['escalation'].degraded)}), 200 if ready else 503)
 
 
@@ -107,8 +108,9 @@ def metrics():
 
 
 def run():
-    global kafka_ready, model_bundle
+    global kafka_ready, model_bundle, model_loaded
     model_bundle = load_models()
+    model_loaded = model_bundle is not None
     while running:
         try:
             consumer = KafkaConsumer(CONSUMER_TOPIC, bootstrap_servers=[BROKER], value_deserializer=lambda v: json.loads(v.decode()), consumer_timeout_ms=3000)

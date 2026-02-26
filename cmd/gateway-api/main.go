@@ -33,7 +33,6 @@ func main() {
 	defer pool.Close()
 	priv, _ := auth.ReadPrivate(cfg.JWTPrivateKey)
 	pub, _ := auth.ReadPublic(cfg.JWTPublicKey)
-	secure := strings.ToLower(os.Getenv("APP_ENV")) != "local"
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

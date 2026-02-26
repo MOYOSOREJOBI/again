@@ -27,7 +27,7 @@ func loadReplayJob(ctx context.Context, db *pgxpool.Pool, jobID string) (Job, er
 }
 
 func loadRawTicks(ctx context.Context, db *pgxpool.Pool, s, e time.Time) ([]Tick, error) {
-	rows, err := db.Query(ctx, `SELECT event_id,symbol,price,volume,event_time,coalesce(id,0) FROM raw_ticks WHERE event_time BETWEEN $1 AND $2 ORDER BY event_time ASC`, s, e)
+	rows, err := db.Query(ctx, `SELECT event_id,symbol,price,volume,event_time,0 FROM raw_ticks WHERE event_time BETWEEN $1 AND $2 ORDER BY event_time ASC`, s, e)
 	if err != nil {
 		return nil, err
 	}
@@ -40,21 +40,4 @@ func loadRawTicks(ctx context.Context, db *pgxpool.Pool, s, e time.Time) ([]Tick
 		}
 	}
 	return out, nil
-import "sync"
-
-var (
-	mu   sync.Mutex
-	jobs = map[string]*Job{}
-)
-
-func Put(job *Job) {
-	mu.Lock()
-	defer mu.Unlock()
-	jobs[job.ID] = job
-}
-
-func Get(id string) *Job {
-	mu.Lock()
-	defer mu.Unlock()
-	return jobs[id]
 }

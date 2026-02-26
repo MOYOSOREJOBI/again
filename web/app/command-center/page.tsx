@@ -15,11 +15,9 @@ export default function CommandCenterPage() {
   useEffect(() => subscribeCommandCenterPatches((p) => setData((d: any) => ({ ...(d || {}), ...p })), () => {}), [])
   if (!data) return <AppShell title="Command Center" subtitle="Real-time risk workspace" filters={filters} setFilters={setFilters}><LoadingState /></AppShell>
   return <AppShell title="Command Center" subtitle="Real-time risk workspace" filters={filters} setFilters={setFilters}>
-        <TrustStrip trustState={data?.trust?.state} modelUnavailable={Boolean(data?.trust?.fallback_mode)} dqWarning={data?.trust?.dq_status} />
-    <div className="grid-3"><div className="card"><h3>Open incidents</h3><p>{data.openIncidents || data.open_incidents || 0}</p></div><div className="card"><h3>High risk</h3><p>{data.highRiskCount || data.high_risk_count || 0}</p></div><div className="card"><h3>Backlog delta</h3><p>{data.backlogDelta || 0}</p></div></div>
     <TrustStrip trustState={data?.trust?.state} modelUnavailable={Boolean(data?.trust?.fallback_mode)} dqWarning={data?.trust?.dq_status} />
     <div className="grid-3"><div className="card"><h3>Open incidents</h3><p>{data.openIncidents || data.open_incidents || 0}</p></div><div className="card"><h3>High risk</h3><p>{data.highRiskCount || data.high_risk_count || 0}</p></div><div className="card"><h3>Backlog delta</h3><p>{data.backlogDelta || 0}</p></div></div>
     <div className="muted">incident_pressure_series</div>
-    <WorldRiskMap data={map.countries || []} selectedCountryCode={filters.country} onSelectCountry={(c) => setFilters((f) => ({ ...f, country: c }))} timeWindow={(filters.time_window as any) || '24h'} industry={filters.industry} />
+    <WorldRiskMap data={map.countries || []} selectedCountryCode={filters.country} onSelectCountry={(c) => setFilters((f) => ({ ...f, country: c }))} />
   </AppShell>
 }

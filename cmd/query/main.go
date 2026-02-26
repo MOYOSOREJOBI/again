@@ -82,7 +82,6 @@ func main() {
 			claims, _ := authn(r, pub)
 			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool, f.TimeWindow) })
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -92,7 +91,6 @@ func main() {
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(context.Background(), pool) })
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -164,6 +162,50 @@ func main() {
 			partial := status != "completed"
 			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"incident projection replay remains simplified"}})
 		})
+		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			var out = map[string]any{"id": id}
+			var status, sym, sev, mv string
+			var p, c float64
+			if err := pool.QueryRow(r.Context(), `SELECT status,primary_symbol,severity_band,coalesce(priority_score,0),coalesce(composite_risk,0),coalesce(model_version,'') FROM incidents WHERE id=$1`, id).Scan(&status, &sym, &sev, &p, &c, &mv); err == nil {
+				out["status"] = status
+				out["symbol"] = sym
+				out["severity"] = sev
+				out["score_header"] = map[string]any{"priority": p, "composite": c}
+				out["model_version"] = mv
+			}
+			httpx.JSON(w, 200, out)
+		})
+		pr.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+			rows, err := pool.Query(r.Context(), `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases ORDER BY updated_at DESC LIMIT 200`)
+			if err != nil {
+				httpx.JSON(w, 200, []any{})
+				return
+			}
+			defer rows.Close()
+			out := []map[string]any{}
+			for rows.Next() {
+				var id, incidentID int64
+				var status, reason, owner string
+				var createdAt, updatedAt any
+				if rows.Scan(&id, &incidentID, &status, &reason, &owner, &createdAt, &updatedAt) == nil {
+					out = append(out, map[string]any{"id": id, "incident_id": incidentID, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt})
+				}
+			}
+			httpx.JSON(w, 200, out)
+		})
+		pr.Get("/case/{id}", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			var incidentID int64
+			var cid int64
+			var status, reason, owner string
+			var createdAt, updatedAt any
+			if err := pool.QueryRow(r.Context(), `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases WHERE id=$1`, id).Scan(&cid, &incidentID, &status, &reason, &owner, &createdAt, &updatedAt); err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"id": cid, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt, "incident_id": incidentID})
+		})
 		pr.Get("/stream/queue", sseStream(func(ctx context.Context) any {
 			rows, _ := qrm.LoadQueue(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
 			inc := map[string]any{"id": 0}
@@ -180,9 +222,6 @@ func main() {
 			t, _ := qrm.LoadTrust(ctx, pool)
 			return t
 		}, "trust_patch"))
-		pr.Get("/stream/queue", sseStream(func() any { return map[string]any{"type": "upsert", "incident": map[string]any{"id": 0}} }, "queue_patch"))
-		pr.Get("/stream/command-center", sseStream(func() any { return map[string]any{"openIncidents": 0} }, "command_center_patch"))
-		pr.Get("/stream/trust", sseStream(func() any { return map[string]any{"state": "stable"} }, "trust_patch"))
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: r, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
@@ -200,7 +239,6 @@ func main() {
 }
 
 func sseStream(payload func(context.Context) any, event string) http.HandlerFunc {
-func sseStream(payload func() any, event string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -218,7 +256,6 @@ func sseStream(payload func() any, event string) http.HandlerFunc {
 				return
 			case <-tk.C:
 				b, _ := json.Marshal(payload(r.Context()))
-				b, _ := json.Marshal(payload())
 				_, _ = w.Write([]byte(": heartbeat\n"))
 				_, _ = w.Write([]byte("event: " + event + "\n"))
 				_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))
