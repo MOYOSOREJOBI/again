@@ -26,10 +26,13 @@ func Run(ctx context.Context, db *pgxpool.Pool, jobID string) error {
 		return err
 	}
 	sortTicks(ticks)
-	result, err := recomputePipeline(ctx, db, job, ticks)
-	if err != nil {
-		_ = markReplayJobFailed(ctx, db, jobID, err.Error())
-		return err
+	result := Result{}
+	if job.ReplayMode != "as_scored" {
+		result, err = recomputePipeline(ctx, db, job, ticks)
+		if err != nil {
+			_ = markReplayJobFailed(ctx, db, jobID, err.Error())
+			return err
+		}
 	}
 	if err := persistReplayResult(ctx, db, job, result); err != nil {
 		_ = markReplayJobFailed(ctx, db, jobID, err.Error())
@@ -95,10 +98,7 @@ func persistReplayResult(ctx context.Context, db *pgxpool.Pool, job Job, result 
 		return err
 	}
 	b, _ := json.Marshal(diff)
-	_, err = db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, job.ID, b)
-func persistReplayResult(ctx context.Context, db *pgxpool.Pool, jobID string, result Result) error {
-	b, _ := json.Marshal(result)
-	_, err := db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, jobID, b)
+	_, err = db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,$2,'completed',$3,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$3,completed_at=now()`, job.ID, job.ReplayMode, b)
 	return err
 }
 
