@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -105,7 +106,9 @@ func main() {
 		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.WorldMapKey(f.Region, f.Industry, f.TimeWindow)
-			countries, err := cache.GetOrLoadJSON(r.Context(), key, ttlWorldMap, func() ([]qrm.CountryAgg, error) { return qrm.LoadWorldMap(r.Context(), pool, f.TimeWindow) })
+			countries, err := cache.GetOrLoadJSON(r.Context(), key, ttlWorldMap, func() ([]qrm.CountryAgg, error) {
+				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+			})
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -120,7 +123,7 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, f.TimeWindow)
+				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
 				if err != nil {
 					return nil, err
 				}
@@ -133,7 +136,19 @@ func main() {
 					top = append(top, map[string]any{"id": row.ID, "symbol": row.Symbol, "priorityScore": row.PriorityScore, "compositeRisk": row.CompositeRisk, "severityBand": row.SeverityBand})
 				}
 				industryConcentration := []map[string]any{}
-				ir, err := pool.Query(r.Context(), `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+windowSQLForExecutive(f.TimeWindow)+` GROUP BY 1 ORDER BY 2 DESC LIMIT 8`)
+				industryArgs := []any{}
+				industryWhere := windowSQLForExecutive(f.TimeWindow)
+				addIndustry := func(col, val string) {
+					if val == "" {
+						return
+					}
+					industryArgs = append(industryArgs, val)
+					industryWhere += fmt.Sprintf(" AND %s=$%d", col, len(industryArgs))
+				}
+				addIndustry("m.region", f.Region)
+				addIndustry("m.country_code", f.Country)
+				addIndustry("m.industry", f.Industry)
+				ir, err := pool.Query(r.Context(), `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+industryWhere+` GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, industryArgs...)
 				if err == nil {
 					defer ir.Close()
 					for ir.Next() {
@@ -196,7 +211,7 @@ func main() {
 			var result any = map[string]any{}
 			_ = pool.QueryRow(r.Context(), `SELECT diff_summary FROM replay_runs WHERE id=$1`, id).Scan(&result)
 			partial := status != "completed"
-			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"incident projection replay remains simplified"}})
+			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"deterministic replay scoring uses return-based approximation"}})
 		})
 		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "id")
