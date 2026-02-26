@@ -100,7 +100,7 @@ func main() {
 			return
 		}
 		_ = audit.Append(ctx, pool, claims.Subject, "alert.ack", id)
-		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+		cache.InvalidateByPrefixes(ctx, cache.ReadModelPrefixes()...)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
