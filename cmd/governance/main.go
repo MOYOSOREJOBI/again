@@ -74,6 +74,7 @@ func main() {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		_, _ = pool.Exec(ctx, `INSERT INTO model_deployments(model_name,model_version,artifact_hash,artifact_path,feature_set_version,calibration_version,status,created_by,approved_by,approved_at,deployed_at,change_reason) VALUES($1,$2,$3,$4,$5,$6,'deployed',$7,$7,now(),now(),$8)`, modelName, version, "inline", "/registry/"+modelName+":"+version, "v2", "", claims.Subject, "api deploy")
 		if err := audit.Append(ctx, pool, claims.Subject, "model.deploy", modelName+":"+version); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
