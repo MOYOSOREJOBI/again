@@ -1,13 +1,14 @@
 export type GlobalFilters = {
-  time_window?: "now" | "1h" | "24h" | "7d";
-  country?: string;
+  window?: "1h" | "24h" | "7d" | "custom";
+  from?: string;
+  to?: string;
+  countryCode?: string;
   region?: string;
   sector?: string;
   industry?: string;
   venue?: string;
-  asset_class?: string;
-  severity?: string;
-  trust_state?: string;
+  symbol?: string;
+  locale?: string;
 };
 
 export function filtersToQuery(filters: GlobalFilters = {}) {
