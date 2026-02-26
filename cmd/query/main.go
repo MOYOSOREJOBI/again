@@ -31,7 +31,18 @@ const (
 	ttlExecutive = 10 * time.Second
 )
 
-type filters struct{ TimeWindow, Country, Region, Industry string }
+type filters struct {
+	Window      string
+	From        time.Time
+	To          time.Time
+	CountryCode string
+	Region      string
+	Sector      string
+	Industry    string
+	Venue       string
+	Symbol      string
+	Locale      string
+}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,9 +79,9 @@ func main() {
 		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
-			key := cache.QueueKey(claims.Role, f.Region, f.Country, f.Industry, f.TimeWindow)
+			key := cache.QueueKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlQueue, func() ([]qrm.QueueRow, error) {
-				return qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -81,9 +92,9 @@ func main() {
 		pr.Get("/command-center", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
-			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
+			key := cache.CommandCenterKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
-				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -93,9 +104,9 @@ func main() {
 		})
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.TrustKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
-				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -105,29 +116,29 @@ func main() {
 		})
 		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.WorldMapKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.WorldMapKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			countries, err := cache.GetOrLoadJSON(r.Context(), key, ttlWorldMap, func() ([]qrm.CountryAgg, error) {
-				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
 			}
-			httpx.JSON(w, 200, map[string]any{"countries": countries, "timeWindow": f.TimeWindow})
+			httpx.JSON(w, 200, map[string]any{"countries": countries, "timeWindow": f.Window})
 		})
 		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.ExecutiveKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.ExecutiveKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlExecutive, func() (map[string]any, error) {
-				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				if err != nil {
 					return nil, err
 				}
-				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				if err != nil {
 					return nil, err
 				}
-				trust, _ := qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				trust, _ := qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				top := make([]map[string]any, 0, 5)
 				for i, row := range topRisks {
 					if i >= 5 {
@@ -137,7 +148,7 @@ func main() {
 				}
 				industryConcentration := []map[string]any{}
 				industryArgs := []any{}
-				industryWhere := windowSQLForExecutive(f.TimeWindow)
+				industryWhere := windowSQLForExecutive(f.Window)
 				addIndustry := func(col, val string) {
 					if val == "" {
 						return
@@ -146,8 +157,11 @@ func main() {
 					industryWhere += fmt.Sprintf(" AND %s=$%d", col, len(industryArgs))
 				}
 				addIndustry("m.region", f.Region)
-				addIndustry("m.country_code", f.Country)
+				addIndustry("m.country_code", f.CountryCode)
 				addIndustry("m.industry", f.Industry)
+				addIndustry("m.sector", f.Sector)
+				addIndustry("m.venue", f.Venue)
+				addIndustry("i.primary_symbol", f.Symbol)
 				ir, err := pool.Query(r.Context(), `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+industryWhere+` GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, industryArgs...)
 				if err == nil {
 					defer ir.Close()
@@ -258,7 +272,7 @@ func main() {
 			httpx.JSON(w, 200, map[string]any{"id": cid, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt, "incident_id": incidentID})
 		})
 		pr.Get("/stream/queue", sseStream(func(ctx context.Context) any {
-			rows, _ := qrm.LoadQueue(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			rows, _ := qrm.LoadQueue(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			inc := map[string]any{"id": 0}
 			if len(rows) > 0 {
 				inc = map[string]any{"id": rows[0].ID, "symbol": rows[0].Symbol, "priorityScore": rows[0].PriorityScore, "severityBand": rows[0].SeverityBand, "recommendedAction": rows[0].RecommendedAction}
@@ -266,11 +280,11 @@ func main() {
 			return map[string]any{"type": "upsert", "incident": inc}
 		}, "queue_patch"))
 		pr.Get("/stream/command-center", sseStream(func(ctx context.Context) any {
-			cc, _ := qrm.LoadCommandCenter(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			cc, _ := qrm.LoadCommandCenter(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			return cc
 		}, "command_center_patch"))
 		pr.Get("/stream/trust", sseStream(func(ctx context.Context) any {
-			t, _ := qrm.LoadTrust(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			t, _ := qrm.LoadTrust(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			return t
 		}, "trust_patch"))
 	})
@@ -318,11 +332,20 @@ func sseStream(payload func(context.Context) any, event string) http.HandlerFunc
 
 func parseFilters(r *http.Request) filters {
 	q := r.URL.Query()
-	tw := q.Get("time_window")
+	tw := q.Get("window")
+	if tw == "" {
+		tw = q.Get("time_window")
+	}
 	if tw == "" {
 		tw = "24h"
 	}
-	return filters{TimeWindow: tw, Country: q.Get("country"), Region: q.Get("region"), Industry: q.Get("industry")}
+	from, _ := time.Parse(time.RFC3339, q.Get("from"))
+	to, _ := time.Parse(time.RFC3339, q.Get("to"))
+	country := q.Get("countryCode")
+	if country == "" {
+		country = q.Get("country")
+	}
+	return filters{Window: tw, From: from, To: to, CountryCode: country, Region: q.Get("region"), Sector: q.Get("sector"), Industry: q.Get("industry"), Venue: q.Get("venue"), Symbol: q.Get("symbol"), Locale: q.Get("locale")}
 }
 
 func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
