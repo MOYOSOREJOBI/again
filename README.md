@@ -55,6 +55,12 @@ prom[Prometheus] --> graf[Grafana]
 - `web` (Next.js): role-aware operator console.
 
 ## API surface (current)
+## New incident-centric surfaces (v1)
+- Query read models: `GET /queue`, `GET /incident/{id}`, `GET /trust`, `GET /world-map` (authenticated).
+- Alerts workflow writes: `POST /incidents/{id}/promote-case`, `POST /cases/{id}/notes` (analyst/admin).
+- Frontend routes: `/command-center`, `/queue`, `/incident/[id]`, `/trust`, `/governance`, `/executive`, `/replay/[job]`, `/case/[id]`, `/glossary`, `/about`.
+
+
 - Gateway: `POST /auth/login`, `POST /auth/logout`, `GET /me`, `GET /audit/verify` (admin).
 - Query: `GET /alerts`, `GET /scores`.
 - Alerts: `GET /sse/alerts`, `POST /alerts/{id}/ack`.

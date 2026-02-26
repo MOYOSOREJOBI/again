@@ -21,6 +21,8 @@ import (
 	"sentinel/internal/auth"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/httpx"
+	"sentinel/internal/incidents"
 	"sentinel/internal/kafka"
 	"sentinel/internal/logging"
 	"sentinel/internal/rbac"
@@ -80,19 +82,41 @@ func main() {
 				sev, _ := m["severity"].(string)
 				explanation, _ := m["explanation"].(string)
 				score, _ := m["score"].(float64)
+				escalation, _ := m["escalation_probability"].(float64)
+				confidence, _ := m["confidence"].(float64)
+				featureHash, _ := m["feature_snapshot_hash"].(string)
+				modelVersion, _ := m["model_version"].(string)
 				if symbol == "" {
 					return
 				}
+				if confidence == 0 {
+					confidence = 0.8
+				}
+				if modelVersion == "" {
+					modelVersion = "baseline-v1"
+				}
 				ts := scoreTS(m)
 				idempotency := scoreIdempotencyKey(symbol, ts, score, sev, explanation)
-				if _, err := pool.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, idempotency, symbol, ts, score, sev, explanation); err != nil {
+				var scoreID int64
+				if err := pool.QueryRow(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,raw_anomaly_score,normalized_anomaly_score,escalation_probability,priority_score,composite_risk,feature_snapshot_hash,model_version,explanation_payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$12,$13) ON CONFLICT (idempotency_key,ts) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id`, idempotency, symbol, ts, score, sev, explanation, score, score, escalation, score, featureHash, modelVersion, map[string]any{"explanation": explanation}).Scan(&scoreID); err != nil {
 					logger.Error("insert score failed", map[string]any{"error": err.Error()})
+					return
 				}
 				if sev == "" || sev == "low" {
 					return
 				}
-				if _, err := pool.Exec(ctx, `INSERT INTO alerts(symbol,status,justification) VALUES($1,'open','auto')`, symbol); err != nil {
+				incidentID, err := incidents.FindOrCreateOpenIncident(ctx, pool, symbol, score, escalation, confidence, featureHash, modelVersion, ts)
+				if err != nil {
+					logger.Error("incident upsert failed", map[string]any{"error": err.Error()})
+					return
+				}
+				var alertID int64
+				if err := pool.QueryRow(ctx, `INSERT INTO alerts(score_id,incident_id,symbol,status,justification) VALUES($1,$2,$3,'open','auto') RETURNING id`, scoreID, incidentID, symbol).Scan(&alertID); err != nil {
 					logger.Error("insert alert failed", map[string]any{"error": err.Error()})
+					return
+				}
+				if _, err := pool.Exec(ctx, `INSERT INTO incident_alert_links(incident_id,alert_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, incidentID, alertID); err != nil {
+					logger.Error("link incident alert failed", map[string]any{"error": err.Error()})
 				}
 				if err := kafka.ProduceJSON(ctx, p, "alerts.created", symbol, m); err != nil {
 					logger.Error("produce alert msg failed", map[string]any{"error": err.Error()})
@@ -141,6 +165,51 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "alert.ack", id); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error(), "id": id})
 		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	r.Post("/incidents/{id}/promote-case", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Reason == "" {
+			http.Error(w, "reason required", http.StatusBadRequest)
+			return
+		}
+		var caseID int64
+		if err := pool.QueryRow(ctx, `INSERT INTO cases(incident_id,reason,owner_name) VALUES($1,$2,$3) RETURNING id`, id, in.Reason, claims.Subject).Scan(&caseID); err != nil {
+			http.Error(w, "failed to create case", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "case.create", fmt.Sprintf("%d", caseID))
+		httpx.JSON(w, http.StatusCreated, map[string]any{"case_id": caseID})
+	})
+
+	r.Post("/cases/{id}/notes", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Note string `json:"note"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Note == "" {
+			http.Error(w, "note required", http.StatusBadRequest)
+			return
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO case_notes(case_id,actor,note) VALUES($1,$2,$3)`, id, claims.Subject, in.Note); err != nil {
+			http.Error(w, "failed to add note", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "case.note", id)
 		w.WriteHeader(http.StatusNoContent)
 	})
 

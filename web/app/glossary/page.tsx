@@ -1,0 +1,1 @@
+export default function GlossaryPage() { return <main style={{ padding: 24 }}><h1>Glossary</h1><ul><li>Anomaly score</li><li>Escalation probability</li><li>Composite risk</li><li>Feature snapshot hash</li></ul></main> }

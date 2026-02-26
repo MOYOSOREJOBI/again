@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"log"
 	"net/http"
 	"os"
@@ -10,10 +11,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"sentinel/internal/auth"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/rbac"
 )
 
 type statusWriter struct {
@@ -42,6 +45,11 @@ func main() {
 	}
 	defer pool.Close()
 
+	pub, err := auth.ReadPublic(cfg.JWTPublicKey)
+	if err != nil {
+		log.Fatalf("query: failed to read JWT public key: %v", err)
+	}
+
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(requestLoggingMiddleware(logger))
@@ -54,65 +62,81 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
-	r.Get("/alerts", func(w http.ResponseWriter, r *http.Request) {
-		rows, err := pool.Query(ctx, `SELECT id,symbol,status,created_at FROM alerts ORDER BY id DESC LIMIT 50`)
-		if err != nil {
-			logger.Error("query alerts failed", map[string]any{"error": err.Error(), "path": r.URL.Path})
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-		out := []map[string]any{}
-		for rows.Next() {
-			var id int
-			var sym, st string
-			var ts interface{}
-			if err := rows.Scan(&id, &sym, &st, &ts); err != nil {
-				logger.Error("scan alert failed", map[string]any{"error": err.Error()})
-				continue
+	r.Group(func(pr chi.Router) {
+		pr.Use(requireRole(pub, "read"))
+		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
+			rows, err := pool.Query(ctx, `SELECT id,primary_symbol,status,severity_band,priority_score,composite_risk,escalation_probability,confidence,last_activity_at,coalesce(owner_name,'') FROM incidents ORDER BY priority_score DESC,last_activity_at DESC LIMIT 100`)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
 			}
-			out = append(out, map[string]any{"id": id, "symbol": sym, "status": st, "ts": ts, "created_at": ts})
-		}
-		if err := rows.Err(); err != nil {
-			logger.Error("rows iteration error", map[string]any{"error": err.Error(), "path": r.URL.Path})
-		}
-		httpx.JSON(w, http.StatusOK, out)
+			defer rows.Close()
+			out := []map[string]any{}
+			for rows.Next() {
+				var id int64
+				var sym, st, sev, owner string
+				var prio, risk, esc, conf float64
+				var ts interface{}
+				if err := rows.Scan(&id, &sym, &st, &sev, &prio, &risk, &esc, &conf, &ts, &owner); err == nil {
+					out = append(out, map[string]any{"id": id, "symbol": sym, "status": st, "severity_band": sev, "priority_score": prio, "composite_risk": risk, "escalation_probability": esc, "confidence": conf, "last_activity_at": ts, "owner": owner})
+				}
+			}
+			httpx.JSON(w, http.StatusOK, out)
+		})
+
+		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			row := pool.QueryRow(ctx, `SELECT id,primary_symbol,status,severity_band,priority_score,composite_risk,escalation_probability,confidence,trust_state,top_driver_1,top_driver_2,top_driver_3,driver_payload,last_activity_at FROM incidents WHERE id=$1`, id)
+			var iid int64
+			var sym, st, sev, trust, d1, d2, d3 string
+			var prio, risk, esc, conf float64
+			var payload any
+			var last any
+			if err := row.Scan(&iid, &sym, &st, &sev, &prio, &risk, &esc, &conf, &trust, &d1, &d2, &d3, &payload, &last); err != nil {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			httpx.JSON(w, http.StatusOK, map[string]any{"id": iid, "symbol": sym, "status": st, "severity_band": sev, "priority_score": prio, "composite_risk": risk, "escalation_probability": esc, "confidence": conf, "trust_state": trust, "top_drivers": []string{d1, d2, d3}, "driver_payload": payload, "last_activity_at": last})
+		})
+
+		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
+			rows, err := pool.Query(ctx, `SELECT symbol,count(*) FROM incidents WHERE trust_state <> 'stable' AND last_activity_at > now()- interval '24 hours' GROUP BY symbol ORDER BY count(*) DESC LIMIT 20`)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			defer rows.Close()
+			out := []map[string]any{}
+			for rows.Next() {
+				var sym string
+				var c int
+				if err := rows.Scan(&sym, &c); err == nil {
+					out = append(out, map[string]any{"symbol": sym, "degraded_count": c})
+				}
+			}
+			httpx.JSON(w, http.StatusOK, map[string]any{"degraded": out})
+		})
+
+		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
+			rows, err := pool.Query(ctx, `SELECT m.country,m.region,m.sector,count(i.id) FROM incidents i JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY m.country,m.region,m.sector ORDER BY count(i.id) DESC`)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			defer rows.Close()
+			out := []map[string]any{}
+			for rows.Next() {
+				var c, reg, sec string
+				var n int
+				if err := rows.Scan(&c, &reg, &sec, &n); err == nil {
+					out = append(out, map[string]any{"country": c, "region": reg, "sector": sec, "incident_count": n})
+				}
+			}
+			httpx.JSON(w, http.StatusOK, out)
+		})
 	})
 
-	r.Get("/scores", func(w http.ResponseWriter, r *http.Request) {
-		rows, err := pool.Query(ctx, `SELECT id,symbol,score,severity,ts FROM scores ORDER BY id DESC LIMIT 50`)
-		if err != nil {
-			logger.Error("query scores failed", map[string]any{"error": err.Error(), "path": r.URL.Path})
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
-		out := []map[string]any{}
-		for rows.Next() {
-			var id int
-			var sym, sev string
-			var score float64
-			var ts interface{}
-			if err := rows.Scan(&id, &sym, &score, &sev, &ts); err != nil {
-				logger.Error("scan score failed", map[string]any{"error": err.Error()})
-				continue
-			}
-			out = append(out, map[string]any{"id": id, "symbol": sym, "score": score, "severity": sev, "ts": ts})
-		}
-		if err := rows.Err(); err != nil {
-			logger.Error("rows iteration error", map[string]any{"error": err.Error(), "path": r.URL.Path})
-		}
-		httpx.JSON(w, http.StatusOK, out)
-	})
-
-	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: r, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	go func() {
 		logger.Info("starting server", map[string]any{"addr": cfg.HTTPAddr})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -129,6 +153,24 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
+}
+
+func requireRole(pub *rsa.PublicKey, perm string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, err := r.Cookie("sentinel_token")
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := auth.Parse(c.Value, pub)
+			if err != nil || !rbac.Allowed(claims.Role, perm) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

@@ -1,7 +1,7 @@
 COMPOSE=docker compose -f deploy/docker/docker-compose.yml
 FAST_COMPOSE=docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.fast.yml
 
-.PHONY: help doctor lint dev-keys up down migrate topics seed demo demo-fast test integration-test integration-suite logs status
+.PHONY: help doctor lint dev-keys up down migrate topics seed demo demo-fast test unit integration-test integration-suite replay-test security-test demo-smoke logs status
 
 help: ## Show available targets
 	@echo "Sentinel Platform - Available targets:"
@@ -87,3 +87,15 @@ integration-suite: ## Run phase2 integration checks
 	./integration/replay_equivalence_test.sh
 	./integration/startup_ordering_test.sh
 	./integration/dependency_failure_test.sh
+
+
+unit: test ## Run unit tests alias
+
+replay-test: ## Run replay determinism integration test
+	./integration/replay_equivalence_test.sh
+
+security-test: ## Run RBAC and auth integration checks
+	./integration/dependency_failure_test.sh
+
+demo-smoke: ## Minimal demo smoke test
+	./integration/e2e_pipeline_test.sh
