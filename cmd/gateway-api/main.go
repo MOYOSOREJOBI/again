@@ -33,7 +33,6 @@ func main() {
 	defer pool.Close()
 	priv, _ := auth.ReadPrivate(cfg.JWTPrivateKey)
 	pub, _ := auth.ReadPublic(cfg.JWTPublicKey)
-	secure := strings.ToLower(os.Getenv("APP_ENV")) != "local"
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -55,7 +54,9 @@ func main() {
 	})
 
 	r.With(middleware.RateLimit(func(r *http.Request) string {
-		return "login:" + clientIP(r)
+		var in struct{ Email string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		return "login:" + r.RemoteAddr + ":" + strings.ToLower(in.Email)
 	}, 5, 5*time.Minute)).Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Email, Password string }
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
@@ -79,6 +80,7 @@ func main() {
 			return
 		}
 		middleware.BindCSRF(in.Email, csrf, 30*time.Minute)
+		secure := strings.ToLower(os.Getenv("APP_ENV")) != "local"
 		http.SetCookie(w, &http.Cookie{Name: "sentinel_token", Value: tok, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, Path: "/", Expires: time.Now().Add(24 * time.Hour)})
 		http.SetCookie(w, &http.Cookie{Name: "sentinel_csrf", Value: csrf, HttpOnly: false, Secure: secure, SameSite: http.SameSiteLaxMode, Path: "/", Expires: time.Now().Add(30 * time.Minute)})
 		_ = audit.Append(r.Context(), pool, in.Email, "login", "success")
@@ -90,6 +92,7 @@ func main() {
 		if ok {
 			middleware.ClearCSRF(claims.Subject)
 		}
+		secure := strings.ToLower(os.Getenv("APP_ENV")) != "local"
 		http.SetCookie(w, &http.Cookie{Name: "sentinel_token", Value: "", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: -1})
 		http.SetCookie(w, &http.Cookie{Name: "sentinel_csrf", Value: "", HttpOnly: false, Secure: secure, SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: -1})
 		w.WriteHeader(http.StatusNoContent)
@@ -114,13 +117,6 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	_ = srv.Shutdown(context.Background())
-}
-
-func clientIP(r *http.Request) string {
-	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-		return strings.Split(xff, ",")[0]
-	}
-	return r.RemoteAddr
 }
 
 func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {

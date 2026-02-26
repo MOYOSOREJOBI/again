@@ -81,7 +81,7 @@ func main() {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
 			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(context.Background(), pool) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -91,7 +91,7 @@ func main() {
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(context.Background(), pool) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -162,22 +162,9 @@ func main() {
 			partial := status != "completed"
 			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"incident projection replay remains simplified"}})
 		})
-		pr.Get("/stream/queue", sseStream(func() any {
-			rows, _ := qrm.LoadQueue(context.Background(), pool, qrm.QueueFilters{TimeWindow: "24h"})
-			inc := map[string]any{"id": 0}
-			if len(rows) > 0 {
-				inc = map[string]any{"id": rows[0].ID, "symbol": rows[0].Symbol, "priorityScore": rows[0].PriorityScore, "severityBand": rows[0].SeverityBand, "recommendedAction": rows[0].RecommendedAction}
-			}
-			return map[string]any{"type": "upsert", "incident": inc}
-		}, "queue_patch"))
-		pr.Get("/stream/command-center", sseStream(func() any {
-			cc, _ := qrm.LoadCommandCenter(context.Background(), pool)
-			return cc
-		}, "command_center_patch"))
-		pr.Get("/stream/trust", sseStream(func() any {
-			t, _ := qrm.LoadTrust(context.Background(), pool)
-			return t
-		}, "trust_patch"))
+		pr.Get("/stream/queue", sseStream(func() any { return map[string]any{"type": "upsert", "incident": map[string]any{"id": 0}} }, "queue_patch"))
+		pr.Get("/stream/command-center", sseStream(func() any { return map[string]any{"openIncidents": 0} }, "command_center_patch"))
+		pr.Get("/stream/trust", sseStream(func() any { return map[string]any{"state": "stable"} }, "trust_patch"))
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: r, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
