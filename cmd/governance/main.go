@@ -13,14 +13,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/segmentio/ksuid"
 	"sentinel/internal/audit"
 	"sentinel/internal/auth"
+	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/middleware"
 	"sentinel/internal/rbac"
+	"sentinel/internal/replay"
 )
 
 func main() {
@@ -45,11 +47,12 @@ func main() {
 	}
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORS)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", readinessHandler(pool))
 
-	r.Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(func(r *http.Request) string { return "gov:" + r.RemoteAddr }, 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -74,17 +77,37 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "model.deploy", modelName+":"+version); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
+		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	r.Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(func(r *http.Request) string { return "replay:" + r.RemoteAddr }, 5, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		id := ksuid.New().String()
-		if _, err := pool.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary) VALUES($1,'demo','completed',$2)`, id, `{"delta":0}`); err != nil {
+		var req struct {
+			Start             time.Time `json:"start"`
+			End               time.Time `json:"end"`
+			ModelVersion      string    `json:"model_version"`
+			FeatureSetVersion string    `json:"feature_set_version"`
+		}
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+		if req.Start.IsZero() {
+			req.Start = time.Now().UTC().Add(-1 * time.Hour)
+		}
+		if req.End.IsZero() {
+			req.End = time.Now().UTC()
+		}
+		if req.ModelVersion == "" {
+			req.ModelVersion = "baseline-v1"
+		}
+		if req.FeatureSetVersion == "" {
+			req.FeatureSetVersion = "v2"
+		}
+		var id string
+		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,'recompute','wm_v1',5000,$4,$5) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
 			logger.Error("start replay failed", map[string]any{"error": err.Error()})
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -92,7 +115,11 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "replay.start", id); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
-		httpx.JSON(w, http.StatusOK, map[string]string{"id": id})
+		go func(id string) {
+			_ = replay.Run(context.Background(), pool, id)
+			cache.InvalidateByPrefixes(context.Background(), "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+		}(id)
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued"})
 	})
 
 	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
