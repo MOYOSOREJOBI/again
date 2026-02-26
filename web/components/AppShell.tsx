@@ -4,16 +4,17 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { api, GlobalFilters, Role } from '../lib/api'
+import { Locale, localeFromStorage, setLocaleStorage, t } from '../lib/i18n'
 
 const NAV_ITEMS = [
-  { href: '/command-center', label: 'Command Center' },
-  { href: '/queue', label: 'Queue' },
-  { href: '/case', label: 'Cases' },
-  { href: '/trust', label: 'Trust' },
-  { href: '/executive', label: 'Executive' },
-  { href: '/governance', label: 'Governance', minRole: 'admin' as Role },
-  { href: '/about', label: 'About' },
-  { href: '/glossary', label: 'Glossary' },
+  { href: '/command-center', label: 'Command Center', key: 'commandCenter' },
+  { href: '/queue', label: 'Queue', key: 'queue' },
+  { href: '/case', label: 'Cases', key: 'cases' },
+  { href: '/trust', label: 'Trust', key: 'trust' },
+  { href: '/executive', label: 'Executive', key: 'executive' },
+  { href: '/governance', label: 'Governance', key: 'governance', minRole: 'admin' as Role },
+  { href: '/about', label: 'About', key: 'about' },
+  { href: '/glossary', label: 'Glossary', key: 'glossary' },
 ]
 
 export function useGlobalFilters() {
@@ -43,8 +44,10 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
   const pathname = usePathname()
   const router = useRouter()
   const [me, setMe] = useState<{ email: string; role: Role }>({ email: '', role: 'viewer' })
+  const [locale, setLocale] = useState<Locale>('en')
 
   useEffect(() => {
+    setLocale(localeFromStorage())
     api.me().then((m) => setMe({ email: m.email || '', role: m.role || 'viewer' })).catch(() => router.replace('/'))
   }, [router])
 
@@ -54,10 +57,10 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
     <main className="shell-root">
       <aside className="left-nav">
         <div className="brand"><span className="brand-dot" />Sentinel</div>
-        <p className="muted">Operator Workbench</p>
+        <p className="muted">{t(locale, 'operatorWorkbench', 'Operator Workbench')}</p>
         <nav className="left-nav-list">
           {NAV_ITEMS.filter((i) => roleAllowed(me.role, i.minRole)).map((item) => (
-            <Link key={item.href} href={item.href} className={`left-nav-link ${pathname === item.href ? 'active' : ''}`}>{item.label}</Link>
+            <Link key={item.href} href={item.href} className={`left-nav-link ${pathname === item.href ? 'active' : ''}`}>{t(locale, item.key, item.label)}</Link>
           ))}
         </nav>
       </aside>
@@ -68,6 +71,20 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
             {subtitle ? <p className="muted">{subtitle}</p> : null}
           </div>
           <div className="user-meta">
+            <select
+              aria-label="Locale"
+              value={locale}
+              onChange={(e) => {
+                const next = e.target.value as Locale
+                setLocale(next)
+                setLocaleStorage(next)
+              }}
+            >
+              <option value="en">English</option>
+              <option value="fr">Français</option>
+              <option value="es">Español</option>
+              <option value="pt">Português</option>
+            </select>
             <span className="pill role">{roleLabel}</span>
             <span className="pill">{me.email || 'signed in'}</span>
           </div>
@@ -80,6 +97,7 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
             <input placeholder="country" value={filters?.country || ''} onChange={(e) => setFilters({ country: e.target.value })} />
             <input placeholder="region" value={filters?.region || ''} onChange={(e) => setFilters({ region: e.target.value })} />
             <input placeholder="sector" value={filters?.sector || ''} onChange={(e) => setFilters({ sector: e.target.value })} />
+            <input placeholder="industry" value={filters?.industry || ''} onChange={(e) => setFilters({ industry: e.target.value })} />
             <input placeholder="venue" value={filters?.venue || ''} onChange={(e) => setFilters({ venue: e.target.value })} />
           </div>
         ) : null}

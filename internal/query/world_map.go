@@ -16,8 +16,20 @@ type CountryAgg struct {
 	TopIndustry      string  `json:"topIndustry,omitempty"`
 }
 
+func mapWindowSQL(tw string) string {
+	switch tw {
+	case "1h":
+		return "i.last_activity_at > now()-interval '1 hour'"
+	case "7d":
+		return "i.last_activity_at > now()-interval '7 days'"
+	default:
+		return "i.last_activity_at > now()-interval '24 hours'"
+	}
+}
+
 func LoadWorldMap(ctx context.Context, db *pgxpool.Pool, timeWindow string) ([]CountryAgg, error) {
-	rows, err := db.Query(ctx, `SELECT coalesce(m.country_code,'XX'),coalesce(m.country_name,'Unknown'),count(i.id),coalesce(avg(i.composite_risk),0),coalesce(max(i.severity_band),'Stable'),coalesce(max(i.trust_state),'healthy'),coalesce(max(m.industry),'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1,2 ORDER BY 3 DESC LIMIT 120`)
+	q := `SELECT coalesce(m.country_code,'XX'),coalesce(m.country_name,'Unknown'),count(i.id),coalesce(avg(i.composite_risk),0),coalesce(max(i.severity_band),'Stable'),coalesce(max(i.trust_state),'healthy'),coalesce(max(m.industry),'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + mapWindowSQL(timeWindow) + ` GROUP BY 1,2 ORDER BY 3 DESC LIMIT 120`
+	rows, err := db.Query(ctx, q)
 	if err != nil {
 		return nil, err
 	}
