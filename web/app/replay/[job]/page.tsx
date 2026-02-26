@@ -2,10 +2,18 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import AppShell from '../../../components/AppShell'
-import { getReplay } from '../../../lib/api'
+import LoadingState from '../../../components/LoadingState'
+import { api } from '../../../lib/api'
 
-export default function ReplayPage(){
-  const params=useParams<{job:string}>(); const [job,setJob]=useState<any>(null)
-  useEffect(()=>{ if(params?.job) getReplay(params.job).then(setJob)},[params?.job])
-  return <AppShell title={`Replay ${params?.job||''}`} subtitle="Metadata-first replay workspace">{!job?<div className="empty-state">Replay metadata unavailable.</div>:<><div className="grid-3"><div className="card"><h3>Status</h3><p>{job.status}</p></div><div className="card"><h3>Window</h3><p>{job.time_window}</p></div><div className="card"><h3>Mode</h3><p>{job.mode}</p></div></div><div className="card"><h3>Lane summary</h3><pre>{JSON.stringify(job.lane_series||{},null,2)}</pre><p className="muted">metadata-first mode: full recompute is not yet enabled.</p></div><div className="card"><h3>Deterministic timeline</h3>{(job.timeline_entries||[]).length ? <div>{job.timeline_entries.map((e:any,idx:number)=><div key={idx} className="timeline-lane"><strong>{e.kind}</strong> · {e.symbol} · {e.status} · {e.severity}</div>)}</div> : <div className="empty-state">No timeline entries available for this replay window.</div>}</div></>}</AppShell>
+export default function ReplayPage() {
+  const params = useParams<{ job: string }>()
+  const [job, setJob] = useState<any>(null)
+  const [mode, setMode] = useState<'as_scored' | 'recomputed'>('recomputed')
+  useEffect(() => { if (params?.job) api.replay(params.job).then(setJob) }, [params?.job])
+  return <AppShell title={`Replay ${params?.job || ''}`} subtitle="Replay workspace">
+    {!job ? <LoadingState /> : <>
+      <div className="grid-3"><div className="card"><h3>Status</h3><p>{job.status}</p></div><div className="card"><h3>Provenance</h3><p>{job.modelVersion} / {job.featureSetVersion}</p></div><div className="card"><h3>Watermark</h3><p>{job.watermarkPolicy} / {job.allowedLatenessMs}ms</p></div></div>
+      <div className="card"><p className="muted">metadata-first mode available when recompute artifacts are absent.</p><button onClick={() => setMode('as_scored')}>As Scored</button> <button onClick={() => setMode('recomputed')}>Recomputed</button><p>Mode: {mode}</p>{job.partial && <p className="muted">Partial replay; limitations: {(job.limitations || []).join(', ')}</p>}</div><div className="card"><h3>Deterministic timeline</h3><p>Synchronized summary lanes.</p></div>
+    </>}
+  </AppShell>
 }
