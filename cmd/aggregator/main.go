@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -88,6 +89,7 @@ func main() {
 			fetches.EachRecord(func(rec *kgo.Record) {
 				var t Tick
 				if err := json.Unmarshal(rec.Value, &t); err != nil || t.Symbol == "" {
+					logger.Error("malformed tick payload", map[string]any{"error": fmt.Sprintf("%v", err), "topic": rec.Topic, "partition": rec.Partition})
 					return
 				}
 				if t.EventTime.IsZero() {
@@ -102,9 +104,11 @@ func main() {
 
 				ct, err := tx.Exec(ctx, `INSERT INTO raw_ticks(event_id,symbol,price,volume,event_time) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, t.EventID, t.Symbol, t.Price, t.Volume, t.EventTime)
 				if err != nil {
+					logger.Error("failed to insert raw tick", map[string]any{"error": err.Error(), "symbol": t.Symbol})
 					return
 				}
 				if ct.RowsAffected() == 0 {
+					logger.Info("duplicate raw tick no-op", map[string]any{"symbol": t.Symbol, "event_id": t.EventID})
 					return
 				} // duplicate event: no side effects
 
@@ -144,6 +148,7 @@ ON CONFLICT (idempotency_key,bucket) DO UPDATE SET
 				}
 
 				if err := tx.Commit(ctx); err != nil {
+					logger.Error("failed to commit aggregation tx", map[string]any{"error": err.Error(), "symbol": t.Symbol})
 					return
 				}
 				_ = kafka.ProduceJSON(ctx, prod, "derived.candles", t.Symbol, map[string]any{"symbol": t.Symbol, "bucket": bucket1s, "price": t.Price, "volume": t.Volume, "event_time": t.EventTime, "version": "v2"})

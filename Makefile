@@ -1,7 +1,7 @@
 COMPOSE=docker compose -f deploy/docker/docker-compose.yml
 FAST_COMPOSE=docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.fast.yml
 
-.PHONY: help doctor lint dev-keys up down migrate topics seed demo demo-fast test unit integration-test integration-suite replay-test security-test demo-smoke verify logs status
+.PHONY: help doctor lint dev-keys up down migrate topics seed demo demo-fast screenshot-smoke test unit integration-test integration-suite replay-test security-test demo-smoke verify logs status
 
 help: ## Show available targets
 	@echo "Sentinel Platform - Available targets:"
@@ -40,6 +40,9 @@ demo:
 
 demo-fast:
 	./scripts/run-demo.sh fast
+
+screenshot-smoke:
+	./scripts/capture-screenshots.sh
 
 test:
 	go test -race -count=1 ./...

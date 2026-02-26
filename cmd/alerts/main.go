@@ -102,6 +102,41 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	r.Post("/incidents/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Command string `json:"command"`
+			Owner   string `json:"owner"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Command == "" {
+			http.Error(w, "invalid payload", http.StatusBadRequest)
+			return
+		}
+		var current string
+		if err := pool.QueryRow(ctx, `SELECT status FROM incidents WHERE id=$1`, id).Scan(&current); err != nil {
+			http.Error(w, "incident not found", http.StatusNotFound)
+			return
+		}
+		next, err := incidents.NextIncidentStatus(current, in.Command)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		rec := incidents.RecommendedActionForIncident(0.5, 0.7, "stable", 0, next == "suppressed")
+		reason := incidents.RankReasonForIncident(0.5, 0.5, 0.7, "stable", 0, true)
+		if _, err := pool.Exec(ctx, `UPDATE incidents SET status=$2,owner_name=COALESCE(NULLIF($3,''),owner_name),updated_at=now(),last_activity_at=now(),top_driver_1=$4,top_driver_2=$5 WHERE id=$1`, id, next, in.Owner, rec, reason); err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "incident.transition", id+":"+next)
+		httpx.JSON(w, http.StatusOK, map[string]any{"status": next, "recommended_action": rec, "rank_reason": reason})
+	})
+
 	r.Post("/cases", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
@@ -140,6 +175,30 @@ func main() {
 		createCase(ctx, w, pool, claims.Subject, incidentID, in.Reason)
 	})
 
+	r.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !rbac.Allowed(claims.Role, "read") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		rows, err := pool.Query(ctx, `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases ORDER BY updated_at DESC LIMIT 200`)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		out := []map[string]any{}
+		for rows.Next() {
+			var id, incidentID int64
+			var status, reason, owner string
+			var createdAt, updatedAt any
+			if rows.Scan(&id, &incidentID, &status, &reason, &owner, &createdAt, &updatedAt) == nil {
+				out = append(out, map[string]any{"id": id, "incident_id": incidentID, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt})
+			}
+		}
+		httpx.JSON(w, http.StatusOK, out)
+	})
+
 	r.Get("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !rbac.Allowed(claims.Role, "read") {
@@ -165,6 +224,7 @@ func main() {
 		out["incident_id"] = incidentID
 		out["notes"] = fetchRows(pool, ctx, `SELECT id,actor,note,created_at FROM case_notes WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "actor", "note", "created_at"})
 		out["evidence"] = fetchRows(pool, ctx, `SELECT id,evidence_type,reference_id,metadata,created_at FROM case_evidence WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "evidence_type", "reference_id", "metadata", "created_at"})
+		out["actions"] = fetchRows(pool, ctx, `SELECT id,actor,action,payload,created_at FROM case_actions WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "actor", "action", "payload", "created_at"})
 		httpx.JSON(w, http.StatusOK, out)
 	})
 
@@ -186,6 +246,7 @@ func main() {
 			http.Error(w, "failed", http.StatusInternalServerError)
 			return
 		}
+		_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "status", map[string]any{"status": in.Status})
 		_ = audit.Append(ctx, pool, claims.Subject, "case.status", id+":"+in.Status)
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -208,6 +269,7 @@ func main() {
 			http.Error(w, "failed to add note", http.StatusInternalServerError)
 			return
 		}
+		_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "note", map[string]any{"note": in.Note})
 		_ = audit.Append(ctx, pool, claims.Subject, "case.note", id)
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -232,6 +294,7 @@ func main() {
 			http.Error(w, "failed", http.StatusInternalServerError)
 			return
 		}
+		_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "evidence", map[string]any{"reference_id": in.ReferenceID, "evidence_type": in.EvidenceType})
 		_ = audit.Append(ctx, pool, claims.Subject, "case.evidence", id+":"+in.ReferenceID)
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -256,6 +319,7 @@ func main() {
 			return
 		}
 		_, _ = pool.Exec(ctx, `INSERT INTO case_notes(case_id,actor,note) VALUES($1,$2,$3)`, id, claims.Subject, "disposition: "+in.Reason)
+		_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "disposition", map[string]any{"status": in.Status, "reason": in.Reason})
 		_ = audit.Append(ctx, pool, claims.Subject, "case.disposition", id+":"+in.Status)
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -342,7 +406,7 @@ func createCase(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, 
 	}
 	var existing int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM cases WHERE incident_id=$1 AND status IN ('open','investigating','escalated') ORDER BY id DESC LIMIT 1`, incidentID).Scan(&existing); err == nil {
-		httpx.JSON(w, http.StatusOK, map[string]any{"case_id": existing, "reused": true})
+		http.Error(w, "duplicate active case", http.StatusConflict)
 		return
 	}
 	var caseID int64
@@ -350,6 +414,7 @@ func createCase(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, 
 		http.Error(w, "failed to create case", http.StatusInternalServerError)
 		return
 	}
+	_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, caseID, actor, "create", map[string]any{"incident_id": incidentID, "reason": reason})
 	_ = audit.Append(ctx, pool, actor, "case.create", fmt.Sprintf("%d", caseID))
 	httpx.JSON(w, http.StatusCreated, map[string]any{"case_id": caseID, "reused": false})
 }

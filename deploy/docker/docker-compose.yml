@@ -112,6 +112,11 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       topics-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8083/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   governance:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: governance}}
@@ -119,6 +124,11 @@ services:
     ports: ["8084:8084"]
     depends_on:
       migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8084/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   query:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: query}}
@@ -126,6 +136,11 @@ services:
     ports: ["8085:8085"]
     depends_on:
       migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8085/readyz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
   web:
     image: node:20-alpine
@@ -134,7 +149,9 @@ services:
     environment: [NODE_ENV=development, NEXT_TELEMETRY_DISABLED=1]
     command: sh -c "npm install --prefer-offline && npm run dev"
     ports: ["3000:3000"]
-    depends_on: [gateway-api,query]
+    depends_on:
+      gateway-api: {condition: service_healthy}
+      query: {condition: service_healthy}
 
   prometheus:
     image: prom/prometheus:v2.54.1

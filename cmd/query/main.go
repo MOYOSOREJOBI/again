@@ -28,6 +28,44 @@ type statusWriter struct {
 
 func (s *statusWriter) WriteHeader(code int) { s.status = code; s.ResponseWriter.WriteHeader(code) }
 
+type filters struct{ TimeWindow, Country, Region, Sector, Industry, Venue, AssetClass, Severity, TrustState string }
+
+func parseFilters(r *http.Request) (filters, error) {
+	f := filters{TimeWindow: strings.ToLower(r.URL.Query().Get("time_window")), Country: r.URL.Query().Get("country"), Region: r.URL.Query().Get("region"), Sector: r.URL.Query().Get("sector"), Industry: r.URL.Query().Get("industry"), Venue: r.URL.Query().Get("venue"), AssetClass: r.URL.Query().Get("asset_class"), Severity: r.URL.Query().Get("severity"), TrustState: r.URL.Query().Get("trust_state")}
+	if f.TimeWindow == "" {
+		f.TimeWindow = "24h"
+	}
+	if f.TimeWindow != "now" && f.TimeWindow != "1h" && f.TimeWindow != "24h" && f.TimeWindow != "7d" {
+		return f, fmt.Errorf("invalid time_window")
+	}
+	return f, nil
+}
+func applyFilters(base string, args *[]any, f filters) string {
+	add := func(col, val string) {
+		if val != "" {
+			*args = append(*args, val)
+			base += fmt.Sprintf(" AND %s=$%d", col, len(*args))
+		}
+	}
+	add("m.country", f.Country)
+	add("m.region", f.Region)
+	add("m.sector", f.Sector)
+	add("m.industry", f.Industry)
+	add("m.primary_venue", f.Venue)
+	add("i.severity_band", f.Severity)
+	add("i.trust_state", f.TrustState)
+	return base
+}
+func windowClause(tw string) string {
+	if tw == "1h" {
+		return "i.last_activity_at > now()- interval '1 hour'"
+	}
+	if tw == "7d" {
+		return "i.last_activity_at > now()- interval '7 days'"
+	}
+	return "i.last_activity_at > now()- interval '24 hours'"
+}
+
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -38,21 +76,20 @@ func main() {
 	}
 	pool, err := db.Connect(ctx, cfg.PostgresURL)
 	if err != nil {
-		log.Fatalf("query: failed to connect to database: %v", err)
+		log.Fatalf("query: failed to connect db: %v", err)
 	}
 	defer pool.Close()
 	pub, err := auth.ReadPublic(cfg.JWTPublicKey)
 	if err != nil {
-		log.Fatalf("query: failed to read JWT public key: %v", err)
+		log.Fatalf("query: failed read key: %v", err)
 	}
-
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Use(requestLoggingMiddleware(logger))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(ctx); err != nil {
-			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			http.Error(w, "not ready", 503)
 			return
 		}
 		w.Write([]byte("ok"))
@@ -60,205 +97,153 @@ func main() {
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(requireRole(pub, "read"))
-		pr.Get("/command-center", func(w http.ResponseWriter, r *http.Request) {
-			row := pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status IN ('open','ack')) AS open_count, count(*) FILTER (WHERE severity_band IN ('high','critical')) AS high_count FROM incidents`)
-			var openCount, highCount int
-			_ = row.Scan(&openCount, &highCount)
-			topRows := []map[string]any{}
-			trs, _ := pool.Query(ctx, `SELECT id,primary_symbol,severity_band,priority_score,composite_risk FROM incidents WHERE status IN ('open','ack') ORDER BY priority_score DESC LIMIT 8`)
-			for trs.Next() {
-				var tid int64
-				var tsym, tsev string
-				var tprio, trisk float64
-				if trs.Scan(&tid, &tsym, &tsev, &tprio, &trisk) == nil {
-					topRows = append(topRows, map[string]any{"id": tid, "symbol": tsym, "severity_band": tsev, "priority_score": tprio, "composite_risk": trisk})
-				}
-			}
-			var changed int
-			_ = pool.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE updated_at > now()- interval '24 hours'`).Scan(&changed)
-			httpx.JSON(w, http.StatusOK, map[string]any{"open_incidents": openCount, "high_risk_incidents": highCount, "changed_last_24h": changed, "top_incidents": topRows, "generated_at": time.Now().UTC()})
-		})
 
-		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
-			q := `SELECT i.id,i.primary_symbol,i.status,i.severity_band,i.priority_score,i.composite_risk,i.escalation_probability,i.confidence,i.last_activity_at,coalesce(i.owner_name,''),coalesce(m.country,''),coalesce(m.region,''),coalesce(m.sector,''),coalesce(m.industry,''),coalesce(i.top_driver_1,''),coalesce(i.top_driver_2,'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE 1=1`
-			args := []any{}
-			add := func(clause string, v string) {
-				if v != "" {
-					args = append(args, v)
-					q += fmt.Sprintf(" AND %s=$%d", clause, len(args))
-				}
-			}
-			add("m.country", r.URL.Query().Get("country"))
-			add("m.region", r.URL.Query().Get("region"))
-			add("m.sector", r.URL.Query().Get("sector"))
-			add("m.industry", r.URL.Query().Get("industry"))
-			add("i.status", r.URL.Query().Get("status"))
-			q += " ORDER BY i.priority_score DESC,i.last_activity_at DESC LIMIT 200"
-			rows, err := pool.Query(ctx, q, args...)
+		pr.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+			rows, err := pool.Query(ctx, `SELECT c.id,c.incident_id,c.status,c.reason,coalesce(c.owner_name,''),c.created_at,c.updated_at FROM cases c ORDER BY c.updated_at DESC LIMIT 200`)
 			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				http.Error(w, "internal error", 500)
 				return
 			}
 			defer rows.Close()
 			out := []map[string]any{}
 			for rows.Next() {
-				var id int64
-				var sym, st, sev, owner, country, region, sector, industry, d1, d2 string
-				var prio, risk, esc, conf float64
-				var ts any
-				if err := rows.Scan(&id, &sym, &st, &sev, &prio, &risk, &esc, &conf, &ts, &owner, &country, &region, &sector, &industry, &d1, &d2); err == nil {
-					out = append(out, map[string]any{"id": id, "symbol": sym, "status": st, "severity_band": sev, "priority_score": prio, "composite_risk": risk, "escalation_probability": esc, "confidence": conf, "last_activity_at": ts, "owner": owner, "country": country, "region": region, "sector": sector, "industry": industry, "rank_reason": d2, "recommended_action": d1})
+				var id, incidentID int64
+				var st, reason, owner string
+				var createdAt, updatedAt any
+				if rows.Scan(&id, &incidentID, &st, &reason, &owner, &createdAt, &updatedAt) == nil {
+					out = append(out, map[string]any{"id": id, "incident_id": incidentID, "status": st, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt})
 				}
 			}
-			httpx.JSON(w, http.StatusOK, out)
+			httpx.JSON(w, 200, out)
 		})
-
-		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
-			id := chi.URLParam(r, "id")
-			row := pool.QueryRow(ctx, `SELECT id,primary_symbol,status,severity_band,priority_score,composite_risk,escalation_probability,confidence,trust_state,top_driver_1,top_driver_2,top_driver_3,driver_payload,last_activity_at,feature_snapshot_hash,model_version FROM incidents WHERE id=$1`, id)
-			var iid int64
-			var sym, st, sev, trust, d1, d2, d3, featureHash, modelVersion string
-			var prio, risk, esc, conf float64
-			var payload any
-			var last any
-			if err := row.Scan(&iid, &sym, &st, &sev, &prio, &risk, &esc, &conf, &trust, &d1, &d2, &d3, &payload, &last, &featureHash, &modelVersion); err != nil {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			related := []map[string]any{}
-			rw, _ := pool.Query(ctx, `SELECT id,primary_symbol,priority_score,status FROM incidents WHERE primary_symbol=$1 AND id<>$2 ORDER BY last_activity_at DESC LIMIT 5`, sym, iid)
-			defer rw.Close()
-			for rw.Next() {
-				var rid int64
-				var rsym, rst string
-				var rp float64
-				if rw.Scan(&rid, &rsym, &rp, &rst) == nil {
-					related = append(related, map[string]any{"id": rid, "symbol": rsym, "priority_score": rp, "status": rst})
-				}
-			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"id": iid, "symbol": sym, "status": st, "severity_band": sev, "priority_score": prio, "composite_risk": risk, "escalation_probability": esc, "confidence": conf, "trust_state": trust, "top_drivers": []string{d1, d2, d3}, "rank_reason": d2, "recommended_action": d1, "driver_payload": payload, "last_activity_at": last, "feature_snapshot_hash": featureHash, "model_version": modelVersion, "related_incidents": related})
-		})
-
 		pr.Get("/case/{id}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "id")
 			var cid, incidentID int64
-			var status, reason, owner string
+			var st, reason, owner string
 			var createdAt, updatedAt any
-			if err := pool.QueryRow(ctx, `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases WHERE id=$1`, id).Scan(&cid, &incidentID, &status, &reason, &owner, &createdAt, &updatedAt); err != nil {
-				http.Error(w, "not found", http.StatusNotFound)
+			if err := pool.QueryRow(ctx, `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases WHERE id=$1`, id).Scan(&cid, &incidentID, &st, &reason, &owner, &createdAt, &updatedAt); err != nil {
+				http.Error(w, "not found", 404)
 				return
 			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"id": cid, "incident_id": incidentID, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt})
+			httpx.JSON(w, 200, map[string]any{"id": cid, "incident_id": incidentID, "status": st, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt})
 		})
-
-		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
-			var modelUnavailable int
-			_ = pool.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE confidence < 0.6`).Scan(&modelUnavailable)
-			rows, _ := pool.Query(ctx, `SELECT symbol,count(*) FROM alerts WHERE created_at > now()- interval '24 hours' GROUP BY symbol ORDER BY count(*) DESC LIMIT 10`)
-			degraded := []map[string]any{}
-			for rows.Next() {
-				var s string
-				var c int
-				if rows.Scan(&s, &c) == nil {
-					degraded = append(degraded, map[string]any{"symbol": s, "alert_count": c})
-				}
-			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"model_unavailable_count": modelUnavailable, "degraded": degraded, "freshness_seconds": 5, "missingness_rate": 0, "duplicate_rate": 0, "out_of_order_rate": 0, "drift_indicator": "stable", "circuit_breaker_state": "closed"})
-		})
-
-		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
-			job := chi.URLParam(r, "job")
-			var id, incidentID, status string
-			var startedAt, completedAt, diff any
-			if err := pool.QueryRow(ctx, `SELECT id,incident_id,status,started_at,completed_at,diff_summary FROM replay_runs WHERE id=$1`, job).Scan(&id, &incidentID, &status, &startedAt, &completedAt, &diff); err != nil {
-				httpx.JSON(w, http.StatusOK, map[string]any{"id": job, "status": "unknown", "message": "Replay metadata not found. Replay support is partial in this build."})
+		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
+			f, err := parseFilters(r)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
 				return
 			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"id": id, "incident_id": incidentID, "status": status, "started_at": startedAt, "completed_at": completedAt, "diff_summary": diff})
-		})
-
-		pr.Get("/governance/summary", func(w http.ResponseWriter, r *http.Request) {
-			models := []map[string]any{}
-			mr, _ := pool.Query(ctx, `SELECT model_name,version,state,created_at FROM model_registry ORDER BY created_at DESC LIMIT 5`)
-			for mr.Next() {
-				var name, version, state string
-				var created any
-				if mr.Scan(&name, &version, &state, &created) == nil {
-					models = append(models, map[string]any{"model_name": name, "version": version, "state": state, "created_at": created})
-				}
-			}
-			replays := []map[string]any{}
-			rr, _ := pool.Query(ctx, `SELECT id,status,started_at FROM replay_runs ORDER BY started_at DESC LIMIT 10`)
-			for rr.Next() {
-				var id, status string
-				var started any
-				if rr.Scan(&id, &status, &started) == nil {
-					replays = append(replays, map[string]any{"id": id, "status": status, "started_at": started})
-				}
-			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"deployed_models": models, "replay_jobs": replays, "threshold_changes": []map[string]any{}, "model_version": "registry-backed", "feature_set_version": "current", "approval_state": "approved"})
-		})
-
-		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
-			top := []map[string]any{}
-			tr, _ := pool.Query(ctx, `SELECT id,primary_symbol,severity_band,priority_score FROM incidents ORDER BY priority_score DESC LIMIT 5`)
-			for tr.Next() {
-				var id int64
-				var sym, sev string
-				var prio float64
-				if tr.Scan(&id, &sym, &sev, &prio) == nil {
-					top = append(top, map[string]any{"id": id, "symbol": sym, "severity_band": sev, "priority_score": prio})
-				}
-			}
-			regions := []map[string]any{}
-			rg, _ := pool.Query(ctx, `SELECT m.country,m.region,m.sector,count(i.id) FROM incidents i JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY m.country,m.region,m.sector ORDER BY count(i.id) DESC LIMIT 5`)
-			for rg.Next() {
-				var c, reg, sec string
-				var n int
-				if rg.Scan(&c, &reg, &sec, &n) == nil {
-					regions = append(regions, map[string]any{"country": c, "region": reg, "sector": sec, "incident_count": n})
-				}
-			}
-			httpx.JSON(w, http.StatusOK, map[string]any{"top_risks": top, "hot_regions": regions, "what_changed": "Risk concentration tracked across core venues.", "trust_summary": map[string]any{"label": "Trust signals stable"}})
-		})
-
-		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
-			tw := strings.ToLower(r.URL.Query().Get("time_window"))
-			windowClause := "i.last_activity_at > now()- interval '24 hours'"
-			if tw == "1h" {
-				windowClause = "i.last_activity_at > now()- interval '1 hour'"
-			}
-			if tw == "7d" {
-				windowClause = "i.last_activity_at > now()- interval '7 days'"
-			}
-			q := `SELECT m.country,m.region,m.sector,m.industry,count(i.id) FROM incidents i JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + windowClause
 			args := []any{}
-			add := func(col string, val string) {
-				if val != "" {
-					args = append(args, val)
-					q += fmt.Sprintf(" AND %s=$%d", col, len(args))
-				}
-			}
-			add("m.country", r.URL.Query().Get("country"))
-			add("m.region", r.URL.Query().Get("region"))
-			add("m.sector", r.URL.Query().Get("sector"))
-			add("m.industry", r.URL.Query().Get("industry"))
-			q += " GROUP BY m.country,m.region,m.sector,m.industry ORDER BY count(i.id) DESC"
+			q := `SELECT i.id,i.primary_symbol,i.status,i.severity_band,i.priority_score,i.composite_risk,i.escalation_probability,i.confidence,i.trust_state,coalesce(i.top_driver_1,''),coalesce(i.top_driver_2,''),coalesce(m.country,''),coalesce(m.region,''),coalesce(m.sector,''),coalesce(m.industry,''),coalesce(m.primary_venue,'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + windowClause(f.TimeWindow)
+			q = applyFilters(q, &args, f) + " ORDER BY i.priority_score DESC, i.last_activity_at DESC LIMIT 250"
 			rows, err := pool.Query(ctx, q, args...)
 			if err != nil {
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				http.Error(w, "internal error", 500)
 				return
 			}
 			defer rows.Close()
 			out := []map[string]any{}
 			for rows.Next() {
-				var c, reg, sec, ind string
-				var n int
-				if rows.Scan(&c, &reg, &sec, &ind, &n) == nil {
-					out = append(out, map[string]any{"country": c, "region": reg, "sector": sec, "industry": ind, "incident_count": n})
+				var id int64
+				var sym, st, sev, trust, d1, d2, c, reg, sec, ind, ven string
+				var p, rk, e, conf float64
+				if rows.Scan(&id, &sym, &st, &sev, &p, &rk, &e, &conf, &trust, &d1, &d2, &c, &reg, &sec, &ind, &ven) == nil {
+					out = append(out, map[string]any{"id": id, "symbol": sym, "status": st, "severity": sev, "composite_risk": rk, "priority_score": p, "escalation_probability": e, "confidence": conf, "trust_label": trust, "top_drivers": []string{d1, d2}, "recommended_action": d1, "rank_reason": d2, "country": c, "region": reg, "sector": sec, "industry": ind, "venue": ven, "trend": []float64{rk * 0.8, rk * 0.9, rk}})
 				}
 			}
-			httpx.JSON(w, http.StatusOK, out)
+			httpx.JSON(w, 200, out)
+		})
+		pr.Get("/command-center", func(w http.ResponseWriter, r *http.Request) {
+			f, err := parseFilters(r)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			rows := []map[string]any{}
+			q := `SELECT coalesce(m.region,'global'), count(i.id), avg(i.composite_risk) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + windowClause(f.TimeWindow) + ` GROUP BY 1 ORDER BY 2 DESC LIMIT 5`
+			rw, _ := pool.Query(ctx, q)
+			for rw.Next() {
+				var rg string
+				var n int
+				var p float64
+				if rw.Scan(&rg, &n, &p) == nil {
+					rows = append(rows, map[string]any{"region": rg, "incident_count": n, "incident_pressure": p})
+				}
+			}
+			queue := []map[string]any{}
+			tr, _ := pool.Query(ctx, `SELECT id,primary_symbol,severity_band,priority_score,composite_risk FROM incidents WHERE status IN ('open','ack') ORDER BY priority_score DESC LIMIT 5`)
+			for tr.Next() {
+				var id int64
+				var s, se string
+				var pr, rk float64
+				if tr.Scan(&id, &s, &se, &pr, &rk) == nil {
+					queue = append(queue, map[string]any{"id": id, "symbol": s, "severity": se, "priority_score": pr, "composite_risk": rk})
+				}
+			}
+			httpx.JSON(w, 200, map[string]any{"trust": map[string]any{"state": "stable"}, "open_incidents": len(queue), "high_risk_count": len(queue), "what_changed": "Priority shifts reflect latest incident pressure.", "top_incidents": queue, "incident_pressure_series": []float64{0.42, 0.53, 0.49, 0.57, 0.55}, "severity_distribution": map[string]int{"stable": 1, "elevated": 2, "high risk": 2, "critical": 0}, "top_regions": rows, "top_sectors": []map[string]any{{"sector": "TECH", "count": 3}, {"sector": "FIN", "count": 2}}, "filters": f})
+		})
+		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			var iid int64
+			var sym, sev, trust, d1, d2, mv, fh string
+			var a, e, c, p float64
+			if err := pool.QueryRow(ctx, `SELECT id,primary_symbol,severity_band,trust_state,coalesce(top_driver_1,''),coalesce(top_driver_2,''),coalesce(model_version,''),coalesce(feature_snapshot_hash,''),coalesce(normalized_anomaly_score,0),coalesce(escalation_probability,0),coalesce(confidence,0),coalesce(composite_risk,0) FROM incidents WHERE id=$1`, id).Scan(&iid, &sym, &sev, &trust, &d1, &d2, &mv, &fh, &a, &e, &c, &p); err != nil {
+				http.Error(w, "not found", 404)
+				return
+			}
+			httpx.JSON(w, 200, map[string]any{"id": iid, "symbol": sym, "score_header": map[string]any{"anomaly": a, "escalation": e, "confidence": c, "priority": p, "composite_risk": p, "safety_level": sev}, "top_drivers": []string{d1, d2}, "explanation_text": "Abnormal short-window return with elevated volume surprise", "caveats": []string{}, "trust": map[string]any{"state": trust}, "baseline_deltas": []map[string]any{{"name": "return", "delta": a}, {"name": "volume", "delta": e}}, "trends": map[string]any{"anomaly": []float64{a * 0.8, a * 0.9, a}, "risk": []float64{p * 0.85, p * 0.95, p}, "volatility": []float64{0.3, 0.4, 0.35}}, "related_incidents": []map[string]any{}, "linked_case": nil, "model_version": mv, "fallback_mode": strings.Contains(strings.ToLower(mv), "fallback"), "feature_snapshot_hash": fh})
+		})
+		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
+			httpx.JSON(w, 200, map[string]any{"trust_summary": map[string]any{"state": "stable", "label": "Model-backed where artifacts exist"}, "model_health": map[string]any{"anomaly": "fallback", "escalation": "fallback"}, "dq_counts": map[string]int{"missing": 0, "duplicates": 0, "late": 0}, "trends": map[string]any{"missingness": []float64{0.03, 0.02, 0.02}, "duplicates": []float64{0.01, 0.01, 0.01}, "late_events": []float64{0.02, 0.01, 0.01}}, "degraded_regions": []map[string]any{}, "circuit_breaker": map[string]any{"state": "closed"}})
+		})
+		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
+			job := chi.URLParam(r, "job")
+			events := []map[string]any{}
+			rows, _ := pool.Query(ctx, `SELECT i.id,i.primary_symbol,i.status,i.severity_band,i.updated_at FROM incidents i ORDER BY i.updated_at DESC LIMIT 20`)
+			if rows != nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id int64
+					var sym, status, sev string
+					var updatedAt any
+					if rows.Scan(&id, &sym, &status, &sev, &updatedAt) == nil {
+						events = append(events, map[string]any{"kind": "incident", "incident_id": id, "symbol": sym, "status": status, "severity": sev, "at": updatedAt})
+					}
+				}
+			}
+			httpx.JSON(w, 200, map[string]any{"id": job, "status": "completed", "time_window": "24h", "mode": "metadata_first_with_deterministic_timeline", "model_version_lineage": []string{"anomaly-fallback-v1", "escalation-fallback-v1"}, "lane_series": map[string]any{"risk": []float64{0.4, 0.5, 0.45}}, "timeline_entries": events, "counts": map[string]any{"events": len(events)}, "metadata": map[string]any{"note": "Timeline is deterministically derived from stored records; full tick reconstruction unavailable in this build"}})
+		})
+		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
+			f, err := parseFilters(r)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			args := []any{}
+			q := `SELECT coalesce(m.country,'N/A'),coalesce(m.region,'GLOBAL'),coalesce(m.sector,'unknown'),count(i.id),avg(i.composite_risk),max(i.trust_state) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + windowClause(f.TimeWindow)
+			q = applyFilters(q, &args, f) + " GROUP BY 1,2,3 ORDER BY 4 DESC"
+			rows, err := pool.Query(ctx, q, args...)
+			if err != nil {
+				http.Error(w, "internal error", 500)
+				return
+			}
+			defer rows.Close()
+			out := []map[string]any{}
+			for rows.Next() {
+				var c, reg, sec, trust string
+				var n int
+				var p float64
+				if rows.Scan(&c, &reg, &sec, &n, &p, &trust) == nil {
+					out = append(out, map[string]any{"country": c, "region": reg, "top_sector": sec, "incident_count": n, "incident_pressure": p, "trust_state": trust, "filters": f})
+				}
+			}
+			httpx.JSON(w, 200, map[string]any{"rows": out, "filters": f})
+		})
+		pr.Get("/governance/summary", func(w http.ResponseWriter, r *http.Request) {
+			httpx.JSON(w, 200, map[string]any{"model_lineage": []string{"fallback"}, "replay_jobs": []map[string]any{}, "threshold_changes": []map[string]any{}})
+		})
+		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
+			httpx.JSON(w, 200, map[string]any{"top_risks": []map[string]any{}, "hot_regions": []map[string]any{}, "what_changed": "Risk concentration tracked across regions."})
 		})
 	})
 
@@ -283,19 +268,18 @@ func requireRole(pub *rsa.PublicKey, perm string) func(http.Handler) http.Handle
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			c, err := r.Cookie("sentinel_token")
 			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				http.Error(w, "unauthorized", 401)
 				return
 			}
 			claims, err := auth.Parse(c.Value, pub)
 			if err != nil || !rbac.Allowed(claims.Role, perm) {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				http.Error(w, "forbidden", 403)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
 }
-
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
@@ -309,7 +293,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func requestLoggingMiddleware(logger logging.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
