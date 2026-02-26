@@ -241,16 +241,6 @@ func main() {
 			httpx.JSON(w, 200, map[string]any{"rows": out, "filters": f})
 		})
 		pr.Get("/governance/summary", func(w http.ResponseWriter, r *http.Request) {
-			c, err := r.Cookie("sentinel_token")
-			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			claims, err := auth.Parse(c.Value, pub)
-			if err != nil || !rbac.Allowed(claims.Role, "governance:read") {
-				http.Error(w, "forbidden", http.StatusForbidden)
-				return
-			}
 			lineage := []string{}
 			rows, err := pool.Query(ctx, `SELECT DISTINCT coalesce(model_version,'baseline-v1') FROM incidents ORDER BY 1 LIMIT 10`)
 			if err == nil {
