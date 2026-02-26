@@ -16,11 +16,10 @@ if str(SERVICE_DIR) not in sys.path:
     sys.path.insert(0, str(SERVICE_DIR))
 
 from src.artifacts import snapshot_hash
-from src.explain import explain_record
-from src.fallbacks import fallback_anomaly, fallback_escalation, fallback_rank_reason, fallback_ranking, fallback_recommended_action, fallback_summary
-from src.models import load_model_bundle
-from src.scoring import clip, composite_risk, confidence_bound
-from src.schemas import normalize_output
+from src.explain import deterministic_explain
+from src.fallbacks import safety_level_from_bounds
+from src.models import load_pickle_model
+from src.scoring import composite_risk, priority_score, recommended_action, score_anomaly, score_escalation
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -36,80 +35,58 @@ LOOP_RUNNING = Gauge('inference_loop_running', 'Inference consumer loop running 
 
 running = True
 kafka_ready = False
-model_loaded = False
 model_bundle: dict | None = None
 
 
-def load_model() -> dict:
-    path = os.getenv('MODEL_CONFIG_PATH', '')
-    if path and not Path(path).exists():
-        raise FileNotFoundError(path)
-    if path:
-        with open(path, 'r', encoding='utf-8') as f:
-            model = json.load(f)
-        model.setdefault('name', 'configured-model')
-        model.setdefault('version', 'custom-v1')
-        model['degraded_mode'] = False
-        return model
-    return {'name': 'baseline', 'version': 'baseline-v1', 'degraded_mode': True, 'feature_set_version': 'v1'}
+def load_models() -> dict:
+    anomaly = load_pickle_model(os.getenv("ANOMALY_MODEL_PATH", ""), "anomaly_fallback_v1")
+    escalation = load_pickle_model(os.getenv("ESCALATION_MODEL_PATH", ""), "escalation_fallback_v1")
+    return {"anomaly": anomaly, "escalation": escalation}
 
 
 def build_output(msg: dict, models: dict | None = None) -> dict:
-    models = models or load_model_bundle()
-    payload = msg.get('payload')
+    models = models or load_models()
+    feats = msg.get('payload', {})
     symbol = msg.get('symbol', '')
-    if not isinstance(payload, dict) or not symbol:
+    if not symbol or not isinstance(feats, dict):
         raise ValueError('malformed feature payload')
+    vec = [feats.get(k, 0.0) for k in sorted(feats.keys())]
+    row = dict(feats)
+    row["vec"] = vec
+    raw_if, anomaly_norm, degraded_if = score_anomaly(models["anomaly"].model, row)
+    esc_p, confidence, band, degraded_es = score_escalation(models["escalation"].model, row, anomaly_norm, degraded_if)
+    comp = composite_risk(anomaly_norm, esc_p, row)
+    pri = priority_score(comp, band, confidence, row)
+    dq = float(row.get("dq_penalty", 0.0))
+    action = recommended_action(pri, confidence, dq)
+    safety = safety_level_from_bounds(pri, dq, confidence)
+    explain = deterministic_explain(row)
 
-    raw_anomaly, normalized_anomaly = fallback_anomaly(payload)
-    dq_penalty = clip(float(payload.get('missingness_rate', 0.0)) + float(payload.get('duplicate_rate', 0.0)) + float(payload.get('out_of_order_rate', 0.0)))
-    incident_pressure = clip(float(payload.get('incident_pressure', payload.get('recurrence', 0.0))))
-    business_weight = clip(float(payload.get('business_weight', 0.2)))
-    volatility_context = clip(abs(float(payload.get('volatility_deviation', payload.get('ewma_vol_30', 0.2)))))
-
-    escalation = fallback_escalation(normalized_anomaly, payload, dq_penalty)
-    composite = composite_risk(normalized_anomaly, escalation, volatility_context, incident_pressure, business_weight, dq_penalty)
-    fallback_mode = any(models[k]['fallback_mode'] for k in ('anomaly', 'escalation', 'ranking'))
-    confidence = confidence_bound(0.92, fallback_mode, dq_penalty)
-    priority_score = fallback_ranking(composite, confidence, dq_penalty, payload.get('open_sla_pressure', incident_pressure))
-    rank_reason = fallback_rank_reason(composite, escalation, dq_penalty, incident_pressure)
-    recommended_action = fallback_recommended_action(priority_score, confidence, dq_penalty)
-    expected_severity_band, safety_level = fallback_summary(composite, dq_penalty)
-    explain = explain_record(payload, dq_penalty)
-
-    merged_model_name = ','.join([models[k]['model_name'] for k in ('anomaly', 'escalation', 'ranking')])
-    merged_model_version = ','.join([models[k]['model_version'] for k in ('anomaly', 'escalation', 'ranking')])
-    merged_hash = ','.join([models[k]['artifact_hash'] or '' for k in ('anomaly', 'escalation', 'ranking')]).strip(',')
-
-    out = normalize_output({
+    fallback_mode = degraded_if or degraded_es
+    out = {
         'symbol': symbol,
-        'raw_anomaly_score': raw_anomaly,
-        'normalized_anomaly_score': normalized_anomaly,
-        'escalation_probability': escalation,
+        'raw_anomaly_score': raw_if,
+        'normalized_anomaly_score': anomaly_norm,
+        'escalation_probability': esc_p,
         'confidence': confidence,
-        'expected_severity_band': expected_severity_band,
-        'priority_score': priority_score,
-        'rank_reason': rank_reason,
-        'recommended_action': recommended_action,
-        'composite_risk': composite,
-        'safety_level': safety_level,
+        'expected_severity_band': band,
+        'priority_score': pri,
+        'recommended_action': action,
+        'composite_risk': comp,
+        'safety_level': safety,
         'top_drivers': explain['top_drivers'],
-        'explanation_text': explain['explanation_text'],
-        'caveats': explain['caveats'],
-        'feature_snapshot_hash': snapshot_hash(payload),
-        'feature_set_version': str(payload.get('feature_set_version', 'v1')),
-        'model_name': merged_model_name,
-        'model_version': merged_model_version,
-        'artifact_hash': merged_hash or None,
+        'explanation_text': explain['plain_language'],
+        'feature_snapshot_hash': snapshot_hash(feats),
+        'feature_set_version': str(msg.get('feature_set_version', feats.get('feature_set_version', 'v2'))),
+        'model_version': f'{models["anomaly"].version},{models["escalation"].version}',
+        'artifact_hash': f'{models["anomaly"].artifact_hash},{models["escalation"].artifact_hash}',
         'fallback_mode': fallback_mode,
-        'dq_penalty': dq_penalty,
-        'incident_pressure': incident_pressure,
-        'business_weight': business_weight,
+        'dq_penalty': dq,
+        'score': comp,
+        'severity': band,
+        'explanation': explain['plain_language'],
         'ts': time.time(),
-    })
-    out['score'] = out['composite_risk']
-    out['severity'] = out['expected_severity_band']
-    out['explanation'] = out['explanation_text']
+    }
     return out
 
 
@@ -120,14 +97,8 @@ def healthz():
 
 @app.get('/readyz')
 def readyz():
-    ready = kafka_ready and model_loaded
-    details = {
-        'ready': ready,
-        'kafka_ready': kafka_ready,
-        'models_loaded': bool(model_bundle),
-        'fallback_mode': True if not model_bundle else any(model_bundle[k]['fallback_mode'] for k in ('anomaly', 'escalation', 'ranking')),
-    }
-    return (jsonify(details), 200) if ready else (jsonify(details), 503)
+    ready = kafka_ready and model_bundle is not None
+    return (jsonify({'ready': ready, 'fallback_mode': True if not model_bundle else (model_bundle['anomaly'].degraded or model_bundle['escalation'].degraded)}), 200 if ready else 503)
 
 
 @app.get('/metrics')
@@ -136,11 +107,8 @@ def metrics():
 
 
 def run():
-    global kafka_ready, model_bundle, model_loaded
-    logger.info('starting inference service')
-    model_bundle = load_model_bundle()
-    model_loaded = True
-    logger.info('model metadata', extra={'models': model_bundle})
+    global kafka_ready, model_bundle
+    model_bundle = load_models()
     while running:
         try:
             consumer = KafkaConsumer(CONSUMER_TOPIC, bootstrap_servers=[BROKER], value_deserializer=lambda v: json.loads(v.decode()), consumer_timeout_ms=3000)
@@ -156,16 +124,13 @@ def run():
                     producer.send(PRODUCER_TOPIC, out)
                     producer.flush()
                     MESSAGES_PRODUCED.inc()
-                except Exception as err:
+                except Exception:
                     PROCESSING_ERRORS.inc()
-                    logger.error('scoring failure', extra={'error': str(err)})
-            consumer.close()
-            producer.close()
-        except Exception as err:
+            consumer.close(); producer.close()
+        except Exception:
             kafka_ready = False
             LOOP_RUNNING.set(0)
             PROCESSING_ERRORS.inc()
-            logger.error('consumer failure', extra={'error': str(err)})
             time.sleep(2)
 
 
