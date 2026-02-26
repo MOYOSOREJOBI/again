@@ -224,7 +224,7 @@ func main() {
 		out["incident_id"] = incidentID
 		out["notes"] = fetchRows(pool, ctx, `SELECT id,actor,note,created_at FROM case_notes WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "actor", "note", "created_at"})
 		out["evidence"] = fetchRows(pool, ctx, `SELECT id,evidence_type,reference_id,metadata,created_at FROM case_evidence WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "evidence_type", "reference_id", "metadata", "created_at"})
-		out["actions"] = fetchRows(pool, ctx, `SELECT id,actor,action,payload,created_at FROM case_actions WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "actor", "action", "payload", "created_at"})
+		out["actions"] = fetchRows(pool, ctx, `SELECT id,actor,action,payload,created_at FROM case_actions WHERE case_id=$1 ORDER BY created_at ASC, id ASC`, id, []string{"id", "actor", "action", "payload", "created_at"})
 		httpx.JSON(w, http.StatusOK, out)
 	})
 
@@ -237,17 +237,35 @@ func main() {
 		id := chi.URLParam(r, "id")
 		var in struct {
 			Status string `json:"status"`
+			Owner  string `json:"owner"`
 		}
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Status == "" {
-			http.Error(w, "status required", http.StatusBadRequest)
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || (in.Status == "" && in.Owner == "") {
+			http.Error(w, "status or owner required", http.StatusBadRequest)
 			return
 		}
-		if _, err := pool.Exec(ctx, `UPDATE cases SET status=$2,updated_at=now() WHERE id=$1`, id, in.Status); err != nil {
+		if in.Status != "" {
+			var current string
+			if err := pool.QueryRow(ctx, `SELECT status FROM cases WHERE id=$1`, id).Scan(&current); err != nil {
+				http.Error(w, "case not found", http.StatusNotFound)
+				return
+			}
+			if !isAllowedCaseTransition(current, in.Status) {
+				http.Error(w, "invalid case status transition", http.StatusBadRequest)
+				return
+			}
+		}
+		if _, err := pool.Exec(ctx, `UPDATE cases SET status=COALESCE(NULLIF($2,''),status),owner_name=COALESCE(NULLIF($3,''),owner_name),updated_at=now() WHERE id=$1`, id, in.Status, in.Owner); err != nil {
 			http.Error(w, "failed", http.StatusInternalServerError)
 			return
 		}
-		_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "status", map[string]any{"status": in.Status})
-		_ = audit.Append(ctx, pool, claims.Subject, "case.status", id+":"+in.Status)
+		if in.Status != "" {
+			_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "status", map[string]any{"status": in.Status})
+			_ = audit.Append(ctx, pool, claims.Subject, "case.status", id+":"+in.Status)
+		}
+		if in.Owner != "" {
+			_, _ = pool.Exec(ctx, `INSERT INTO case_actions(case_id,actor,action,payload) VALUES($1,$2,$3,$4)`, id, claims.Subject, "assignment", map[string]any{"owner": in.Owner})
+			_ = audit.Append(ctx, pool, claims.Subject, "case.assignment", id+":"+in.Owner)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -406,7 +424,7 @@ func createCase(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, 
 	}
 	var existing int64
 	if err := pool.QueryRow(ctx, `SELECT id FROM cases WHERE incident_id=$1 AND status IN ('open','investigating','escalated') ORDER BY id DESC LIMIT 1`, incidentID).Scan(&existing); err == nil {
-		http.Error(w, "duplicate active case", http.StatusConflict)
+		httpx.JSON(w, http.StatusConflict, map[string]any{"error": "duplicate active case", "existing_case_id": existing})
 		return
 	}
 	var caseID int64
@@ -441,6 +459,19 @@ func fetchRows(pool *pgxpool.Pool, ctx context.Context, q, id string, cols []str
 		}
 	}
 	return out
+}
+
+func isAllowedCaseTransition(current, next string) bool {
+	allowed := map[string]map[string]bool{
+		"open":          {"investigating": true, "escalated": true, "closed": true},
+		"investigating": {"escalated": true, "closed": true, "open": true},
+		"escalated":     {"investigating": true, "closed": true},
+		"closed":        {},
+	}
+	if current == next {
+		return true
+	}
+	return allowed[current][next]
 }
 
 func scoreTS(m map[string]any) time.Time {
