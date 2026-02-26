@@ -96,6 +96,9 @@ func persistReplayResult(ctx context.Context, db *pgxpool.Pool, job Job, result 
 	}
 	b, _ := json.Marshal(diff)
 	_, err = db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, job.ID, b)
+func persistReplayResult(ctx context.Context, db *pgxpool.Pool, jobID string, result Result) error {
+	b, _ := json.Marshal(result)
+	_, err := db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, jobID, b)
 	return err
 }
 
