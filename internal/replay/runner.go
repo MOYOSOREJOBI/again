@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -51,6 +52,7 @@ func recomputePipeline(ctx context.Context, db *pgxpool.Pool, job Job, ticks []T
 		return Result{}, nil
 	}
 	feat, score, candle := 0, 0, 0
+	lastPrice := map[string]float64{}
 	for _, t := range ticks {
 		payload := map[string]any{"symbol": t.Symbol, "price": t.Price, "volume": t.Volume, "event_time": t.EventTime, "replay_job_id": job.ID}
 		b, _ := json.Marshal(payload)
@@ -59,10 +61,32 @@ func recomputePipeline(ctx context.Context, db *pgxpool.Pool, job Job, ticks []T
 		candle++
 		_, _ = db.Exec(ctx, `INSERT INTO features(idempotency_key,symbol,ts,feature_hash,payload,replay_run_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:feature:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, job.ID, b, job.ID)
 		feat++
-		_, _ = db.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,replay_run_id,model_version,feature_set_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:score:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, 0.0, "stable", "recomputed", job.ID, job.ModelVersion, job.FeatureSetVersion)
+
+		s, sev := replayScoreAndSeverity(lastPrice[t.Symbol], t.Price)
+		explanation := fmt.Sprintf("recomputed_return=%.6f", s)
+		_, _ = db.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,replay_run_id,model_version,feature_set_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:score:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, s, sev, explanation, job.ID, job.ModelVersion, job.FeatureSetVersion)
+		lastPrice[t.Symbol] = t.Price
 		score++
 	}
 	return Result{TickCount: len(ticks), CandleCount: candle, FeatureCount: feat, ScoreCount: score}, nil
+}
+
+func replayScoreAndSeverity(prevPrice, price float64) (float64, string) {
+	if prevPrice <= 0 || price <= 0 {
+		return 0, "stable"
+	}
+	ret := math.Abs((price / prevPrice) - 1)
+	score := math.Max(0, math.Min(1, ret*25.0))
+	switch {
+	case score >= 0.85:
+		return score, "critical"
+	case score >= 0.65:
+		return score, "high"
+	case score >= 0.40:
+		return score, "elevated"
+	default:
+		return score, "stable"
+	}
 }
 
 func persistReplayResult(ctx context.Context, db *pgxpool.Pool, jobID string, result Result) error {
