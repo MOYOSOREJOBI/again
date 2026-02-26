@@ -1,0 +1,1 @@
+export default function ReplayPage({ params }: { params: { job: string } }) { return <main style={{ padding: 24 }}><h1>Replay {params.job}</h1><p>Replay lanes are partially implemented in v1.</p></main> }

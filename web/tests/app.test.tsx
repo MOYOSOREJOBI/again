@@ -4,7 +4,9 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import Page from '../app/page'
 
-test('root page renders deterministic loading state on initial render', () => {
+test('root page renders navigation entry points', () => {
   const html = renderToStaticMarkup(React.createElement(Page))
-  assert.match(html, /Loading Sentinel/)
+  assert.match(html, /Sentinel/)
+  assert.match(html, /Command Center/)
+  assert.match(html, /Queue/)
 })

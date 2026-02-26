@@ -46,36 +46,34 @@ def metrics():
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 
-def severity(score: float) -> str:
-    if score > 0.8:
-        return 'critical'
-    if score > 0.6:
-        return 'high'
-    if score > 0.4:
-        return 'medium'
-    return 'low'
+from src.models import load_model
+from src.fallbacks import escalation_probability
+from src.scoring import composite, severity, clip
+from src.explain import explain
+from src.artifacts import snapshot_hash
 
 
-def load_model() -> dict:
-    path = os.getenv('MODEL_CONFIG_PATH', '')
-    if not path:
-        return {'name': 'baseline', 'version': 'v1'}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def build_output(m: dict) -> dict:
+def build_output(m: dict, model: dict) -> dict:
     payload = m.get('payload', {})
-    lr = payload.get('log_return', 0)
+    lr = abs(float(payload.get('log_return_1s', payload.get('log_return', 0.0))))
     symbol = m.get('symbol', '')
     if not symbol:
         raise ValueError('symbol is required')
-    score = min(0.99, abs(lr) * 2)
+    raw = min(0.99, lr * 3)
+    norm = clip(raw)
+    esc = escalation_probability(payload)
+    risk = composite(norm, esc, v=min(1.0, abs(float(payload.get('ewma_vol_30', 0.2)))), dq=float(payload.get('missingness_rate', 0.0)))
     return {
         'symbol': symbol,
-        'score': score,
-        'severity': severity(score),
-        'explanation': f'abs(log_return)={abs(lr):.4f}',
+        'score': risk,
+        'raw_anomaly_score': raw,
+        'normalized_anomaly_score': norm,
+        'escalation_probability': esc,
+        'confidence': 0.8 if model.get('name') == 'iforest-fallback' else 0.9,
+        'severity': severity(risk),
+        'explanation': explain(payload),
+        'feature_snapshot_hash': snapshot_hash(payload),
+        'model_version': model.get('version', 'baseline-v1'),
         'ts': time.time(),
     }
 
@@ -84,7 +82,7 @@ def run():
     global running, kafka_ready, model_loaded
     logger.info('Starting inference consumer on topic %s', CONSUMER_TOPIC)
     try:
-        _ = load_model()
+        model = load_model()
         model_loaded = True
     except Exception as e:
         logger.error('Model load failed: %s', e)
@@ -124,7 +122,7 @@ def run():
                     if not isinstance(m, dict):
                         logger.warning('Skipping non-dict message')
                         continue
-                    out = build_output(m)
+                    out = build_output(m, model)
                     p.send(PRODUCER_TOPIC, out)
                     p.flush()
                     MESSAGES_PRODUCED.inc()

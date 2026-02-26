@@ -14,10 +14,10 @@ fi
 
 # Bring up infrastructure first so topics and migrations are deterministic.
 $COMPOSE up -d redpanda postgres redis
+./scripts/migrate.sh
 ./scripts/create-topics.sh
 
-# Start application services only after topics exist.
+# Start application services only after prerequisites exist.
 $COMPOSE up -d --build gateway-api simulator aggregator features inference alerts governance query web prometheus grafana
-./scripts/migrate.sh
 make seed
 echo "Sentinel Demo Ready ($mode)"

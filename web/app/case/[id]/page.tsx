@@ -1,0 +1,1 @@
+export default function CasePage({ params }: { params: { id: string } }) { return <main style={{ padding: 24 }}><h1>Case {params.id}</h1><p>Case notes and evidence endpoints are available in alerts service.</p></main> }

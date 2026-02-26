@@ -116,12 +116,27 @@ func main() {
 				bucket := t.EventTime.Truncate(time.Second)
 				h := sha256.Sum256([]byte(t.Symbol + bucket.String() + "1s"))
 				key := hex.EncodeToString(h[:])
-				if _, err := tx.Exec(ctx, `INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume) VALUES($1,$2,$3,'1s',$4,$4,$4,$4,$5) ON CONFLICT DO NOTHING`, key, t.Symbol, bucket, t.Price, t.Volume); err != nil {
-					logger.Error("insert candle 1s failed", map[string]any{"error": err.Error()})
+				if _, err := tx.Exec(ctx, `
+INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume)
+VALUES($1,$2,$3,'1s',$4,$4,$4,$4,$5)
+ON CONFLICT (idempotency_key,bucket) DO UPDATE
+SET high=GREATEST(candles.high,EXCLUDED.high),
+    low=LEAST(candles.low,EXCLUDED.low),
+    close=EXCLUDED.close,
+    volume=candles.volume+EXCLUDED.volume`, key, t.Symbol, bucket, t.Price, t.Volume); err != nil {
+					logger.Error("upsert candle 1s failed", map[string]any{"error": err.Error()})
 					return
 				}
-				if _, err := tx.Exec(ctx, `INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume) VALUES($1,$2,$3,'1m',$4,$4,$4,$4,$5) ON CONFLICT DO NOTHING`, key+"m", t.Symbol, t.EventTime.Truncate(time.Minute), t.Price, t.Volume); err != nil {
-					logger.Error("insert candle 1m failed", map[string]any{"error": err.Error()})
+				minBucket := t.EventTime.Truncate(time.Minute)
+				if _, err := tx.Exec(ctx, `
+INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume)
+VALUES($1,$2,$3,'1m',$4,$4,$4,$4,$5)
+ON CONFLICT (idempotency_key,bucket) DO UPDATE
+SET high=GREATEST(candles.high,EXCLUDED.high),
+    low=LEAST(candles.low,EXCLUDED.low),
+    close=EXCLUDED.close,
+    volume=candles.volume+EXCLUDED.volume`, key+"m", t.Symbol, minBucket, t.Price, t.Volume); err != nil {
+					logger.Error("upsert candle 1m failed", map[string]any{"error": err.Error()})
 					return
 				}
 				if err := tx.Commit(ctx); err != nil {
