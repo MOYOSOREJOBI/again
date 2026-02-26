@@ -1,24 +1,39 @@
 # Testing Guide
 
-## Frontend
-- `cd web && npm ci`
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-- `npm run build`
+## Fast local checks
+- `go test ./internal/rbac -count=1`
+- `go test ./cmd/alerts -run TestIsAllowedCaseTransition -count=1`
+- `go test ./cmd/query -run 'TestRatio|TestReplayLanes' -count=1`
+- `cd web && npm test`
 
-## Go
-- `go test ./...`
+## Full unit layer
+- `make unit`
 
-## Python inference
-- `cd services/inference && python -m unittest discover -s tests -q`
-
-## Integration
+## Integration suite (Docker-gated)
 - `make integration-suite`
+- Includes:
+  - pipeline/idempotency/replay checks
+  - dependency failure checks
+  - case workflow regression (`integration/case_workflow_test.sh`)
+  - query auth + governance RBAC regression (`integration/query_auth_test.sh`)
+
+## Browser validation / artifacts
+- Non-strict (returns `3` on environment SKIP):
+  - `make browser-validate`
+  - `make screenshot-smoke`
+- Strict release mode (SKIP becomes failure):
+  - `REQUIRE_BROWSER=1 make browser-validate`
+  - `REQUIRE_BROWSER=1 make screenshot-smoke`
+  - `make verify-screenshots`
+
+## Release gate
+- `make release-gate`
+- Gate fails on:
+  - unit / integration regressions
+  - browser validation failure
+  - screenshot failure
+  - invalid or incomplete screenshot manifest
 
 ## Full Docker runtime validation
-- Run from repo root (`come-main`) so compose paths resolve correctly.
-- Use the committed validator script:
-  - `bash scripts/final-validation.sh`
-- If you are on zsh, do not paste shebang blocks directly in terminal; save to file and run with `bash`.
-
+- Run from repo root.
+- `bash scripts/final-validation.sh`
