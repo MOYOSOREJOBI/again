@@ -16,17 +16,6 @@ type CountryAgg struct {
 	TopIndustry      string  `json:"topIndustry,omitempty"`
 }
 
-func mapWindowSQL(tw string) string {
-	switch tw {
-	case "1h":
-		return "i.last_activity_at > now()-interval '1 hour'"
-	case "7d":
-		return "i.last_activity_at > now()-interval '7 days'"
-	default:
-		return "i.last_activity_at > now()-interval '24 hours'"
-	}
-}
-
 func LoadWorldMap(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]CountryAgg, error) {
 	where, args := whereClause(f)
 

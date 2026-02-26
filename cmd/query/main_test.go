@@ -24,3 +24,14 @@ func TestParseFiltersExtendedContract(t *testing.T) {
 		t.Fatalf("expected parsed custom range")
 	}
 }
+
+func TestParseFiltersNormalizesAndBackCompat(t *testing.T) {
+	r := httptest.NewRequest("GET", "/queue?time_window=bogus&country=GB", nil)
+	f := parseFilters(r)
+	if f.Window != "24h" {
+		t.Fatalf("expected fallback window, got %s", f.Window)
+	}
+	if f.CountryCode != "GB" {
+		t.Fatalf("expected country alias propagation")
+	}
+}
