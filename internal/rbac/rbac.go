@@ -6,7 +6,7 @@ import (
 )
 
 var permissions = map[string]map[string]bool{
-	"admin":   {"*": true},
+	"admin":   {"*": true, "governance:read": true},
 	"analyst": {"alerts:write": true, "replay:write": true, "read": true},
 	"viewer":  {"read": true},
 }

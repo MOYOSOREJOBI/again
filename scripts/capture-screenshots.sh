@@ -1,37 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 OUT_DIR=${1:-docs/screenshots}
-BASE=${BASE_URL:-http://localhost:3000}
 mkdir -p "$OUT_DIR"
-if ! python3 - <<'PY' >/dev/null 2>&1
-import playwright
-PY
-then
-  echo "SKIP: playwright python package not available"
-  exit 0
+MANIFEST="$OUT_DIR/manifest.json"
+STRICT=${REQUIRE_BROWSER:-0}
+if ! command -v node >/dev/null 2>&1; then
+  echo '[{"route":"all","status":"SKIP","reason":"node unavailable"}]' > "$MANIFEST"
+  echo "SKIP: node unavailable"
+  [ "$STRICT" = "1" ] && exit 1 || exit 3
 fi
-python3 - <<PY
-from playwright.sync_api import sync_playwright
-base = '${BASE}'
-out = '${OUT_DIR}'
-routes = [
- ('command-center','/command-center'),
- ('queue','/queue'),
- ('incident','/incident/1'),
- ('trust','/trust'),
- ('replay','/replay/demo'),
- ('governance','/governance'),
- ('about','/about'),
-]
-with sync_playwright() as p:
-    browser = p.chromium.launch()
-    page = browser.new_page(viewport={'width': 1600, 'height': 1000})
-    for name, path in routes:
-        try:
-            page.goto(base + path, wait_until='networkidle', timeout=20000)
-            page.screenshot(path=f"{out}/{name}.png", full_page=True)
-            print(f"PASS: {name} -> {out}/{name}.png")
-        except Exception as e:
-            print(f"FAIL: {name} -> {e}")
-    browser.close()
-PY
+if node -e "require('playwright')" >/dev/null 2>&1; then
+  OUT_DIR="$OUT_DIR" node scripts/capture-screenshots.mjs
+  exit $?
+fi
+if command -v docker >/dev/null 2>&1; then
+  docker run --rm --network host -v "$PWD":/work -w /work -e OUT_DIR="$OUT_DIR" mcr.microsoft.com/playwright:v1.55.0-jammy node scripts/capture-screenshots.mjs
+  exit $?
+fi
+echo '[{"route":"all","status":"SKIP","reason":"playwright missing locally and docker unavailable"}]' > "$MANIFEST"
+echo "SKIP: playwright missing locally and docker unavailable"
+[ "$STRICT" = "1" ] && exit 1 || exit 3

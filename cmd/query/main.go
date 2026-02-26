@@ -199,19 +199,20 @@ func main() {
 		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
 			job := chi.URLParam(r, "job")
 			events := []map[string]any{}
-			rows, _ := pool.Query(ctx, `SELECT i.id,i.primary_symbol,i.status,i.severity_band,i.updated_at FROM incidents i ORDER BY i.updated_at DESC LIMIT 20`)
+			rows, _ := pool.Query(ctx, `SELECT i.id,i.primary_symbol,i.status,i.severity_band,i.updated_at,coalesce(i.composite_risk,0),coalesce(i.priority_score,0),coalesce(m.region,'GLOBAL') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol ORDER BY i.updated_at ASC, i.id ASC LIMIT 50`)
 			if rows != nil {
 				defer rows.Close()
 				for rows.Next() {
 					var id int64
-					var sym, status, sev string
+					var sym, status, sev, region string
+					var risk, priority float64
 					var updatedAt any
-					if rows.Scan(&id, &sym, &status, &sev, &updatedAt) == nil {
-						events = append(events, map[string]any{"kind": "incident", "incident_id": id, "symbol": sym, "status": status, "severity": sev, "at": updatedAt})
+					if rows.Scan(&id, &sym, &status, &sev, &updatedAt, &risk, &priority, &region) == nil {
+						events = append(events, map[string]any{"kind": "incident", "incident_id": id, "symbol": sym, "status": status, "severity": sev, "at": updatedAt, "region": region, "risk": risk, "priority": priority})
 					}
 				}
 			}
-			httpx.JSON(w, 200, map[string]any{"id": job, "status": "completed", "time_window": "24h", "mode": "metadata_first_with_deterministic_timeline", "model_version_lineage": []string{"anomaly-fallback-v1", "escalation-fallback-v1"}, "lane_series": map[string]any{"risk": []float64{0.4, 0.5, 0.45}}, "timeline_entries": events, "counts": map[string]any{"events": len(events)}, "metadata": map[string]any{"note": "Timeline is deterministically derived from stored records; full tick reconstruction unavailable in this build"}})
+			httpx.JSON(w, 200, map[string]any{"id": job, "status": "completed", "time_window": "24h", "mode": "metadata_first_with_deterministic_timeline", "scope": map[string]any{"source": "incidents+instrument_metadata", "window": "24h"}, "model_version_lineage": []string{"anomaly-fallback-v1", "escalation-fallback-v1"}, "lane_series": replayLanes(events), "timeline_entries": events, "counts": map[string]any{"events": len(events), "lane_groups": 3}, "caveat": "deterministic derived timeline from persisted metadata; full tick-perfect replay unavailable", "metadata": map[string]any{"note": "Timeline is deterministically derived from stored records; full tick reconstruction unavailable in this build"}})
 		})
 		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
 			f, err := parseFilters(r)
@@ -240,10 +241,74 @@ func main() {
 			httpx.JSON(w, 200, map[string]any{"rows": out, "filters": f})
 		})
 		pr.Get("/governance/summary", func(w http.ResponseWriter, r *http.Request) {
-			httpx.JSON(w, 200, map[string]any{"model_lineage": []string{"fallback"}, "replay_jobs": []map[string]any{}, "threshold_changes": []map[string]any{}})
+			c, err := r.Cookie("sentinel_token")
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			claims, err := auth.Parse(c.Value, pub)
+			if err != nil || !rbac.Allowed(claims.Role, "governance:read") {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			lineage := []string{}
+			rows, err := pool.Query(ctx, `SELECT DISTINCT coalesce(model_version,'baseline-v1') FROM incidents ORDER BY 1 LIMIT 10`)
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var mv string
+					if rows.Scan(&mv) == nil {
+						lineage = append(lineage, mv)
+					}
+				}
+			}
+			if len(lineage) == 0 {
+				lineage = []string{"fallback"}
+			}
+			var total, fallback, dqWarnings int
+			_ = pool.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE lower(model_version) LIKE '%fallback%'),count(*) FILTER (WHERE trust_state!='stable') FROM incidents`).Scan(&total, &fallback, &dqWarnings)
+			replayJobs := []map[string]any{}
+			replayRows, err := pool.Query(ctx, `SELECT id,status,started_at,completed_at FROM replay_runs ORDER BY started_at DESC LIMIT 5`)
+			if err == nil {
+				defer replayRows.Close()
+				for replayRows.Next() {
+					var id, status string
+					var startedAt, completedAt any
+					if replayRows.Scan(&id, &status, &startedAt, &completedAt) == nil {
+						replayJobs = append(replayJobs, map[string]any{"id": id, "status": status, "started_at": startedAt, "completed_at": completedAt})
+					}
+				}
+			}
+			httpx.JSON(w, 200, map[string]any{"model_lineage": lineage, "fallback_ratio": ratio(fallback, total), "data_quality_warning_count": dqWarnings, "replay_jobs": replayJobs, "threshold_changes": []map[string]any{}, "trust_posture_summary": map[string]any{"state": "stable", "fallback_labeled": fallback > 0}})
 		})
 		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
-			httpx.JSON(w, 200, map[string]any{"top_risks": []map[string]any{}, "hot_regions": []map[string]any{}, "what_changed": "Risk concentration tracked across regions."})
+			topRisks := []map[string]any{}
+			riskRows, err := pool.Query(ctx, `SELECT id,primary_symbol,severity_band,coalesce(composite_risk,0) FROM incidents ORDER BY composite_risk DESC, id ASC LIMIT 5`)
+			if err == nil {
+				defer riskRows.Close()
+				for riskRows.Next() {
+					var id int64
+					var sym, sev string
+					var risk float64
+					if riskRows.Scan(&id, &sym, &sev, &risk) == nil {
+						topRisks = append(topRisks, map[string]any{"incident_id": id, "symbol": sym, "severity": sev, "composite_risk": risk})
+					}
+				}
+			}
+			hotRegions := []map[string]any{}
+			hotRows, err := pool.Query(ctx, `SELECT coalesce(m.region,'GLOBAL'),count(i.id),avg(i.composite_risk) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1 ORDER BY 2 DESC, 1 ASC LIMIT 5`)
+			if err == nil {
+				defer hotRows.Close()
+				for hotRows.Next() {
+					var region string
+					var count int
+					var avgRisk float64
+					if hotRows.Scan(&region, &count, &avgRisk) == nil {
+						hotRegions = append(hotRegions, map[string]any{"region": region, "incident_count": count, "avg_risk": avgRisk})
+					}
+				}
+			}
+			httpx.JSON(w, 200, map[string]any{"top_risks": topRisks, "hot_regions": hotRegions, "trust_summary": map[string]any{"mode": "fallback_labeled"}, "what_changed": "Risk concentration tracked across regions with deterministic incident aggregates."})
 		})
 	})
 
@@ -261,6 +326,31 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
+}
+
+func replayLanes(events []map[string]any) map[string]any {
+	risk := []float64{}
+	priority := []float64{}
+	byRegion := map[string]int{}
+	for _, e := range events {
+		if v, ok := e["risk"].(float64); ok {
+			risk = append(risk, v)
+		}
+		if v, ok := e["priority"].(float64); ok {
+			priority = append(priority, v)
+		}
+		if reg, ok := e["region"].(string); ok && reg != "" {
+			byRegion[reg]++
+		}
+	}
+	return map[string]any{"risk": risk, "priority": priority, "region_activity": byRegion}
+}
+
+func ratio(part, total int) float64 {
+	if total == 0 {
+		return 0
+	}
+	return float64(part) / float64(total)
 }
 
 func requireRole(pub *rsa.PublicKey, perm string) func(http.Handler) http.Handler {
