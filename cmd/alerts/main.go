@@ -19,6 +19,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"sentinel/internal/audit"
 	"sentinel/internal/auth"
+	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
 	"sentinel/internal/httpx"
@@ -99,6 +100,7 @@ func main() {
 			return
 		}
 		_ = audit.Append(ctx, pool, claims.Subject, "alert.ack", id)
+		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
 		w.WriteHeader(http.StatusNoContent)
 	})
 

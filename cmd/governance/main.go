@@ -15,11 +15,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"sentinel/internal/audit"
 	"sentinel/internal/auth"
+	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/middleware"
 	"sentinel/internal/rbac"
+	"sentinel/internal/replay"
 )
 
 func main() {
@@ -44,11 +47,12 @@ func main() {
 	}
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORS)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", readinessHandler(pool))
 
-	r.Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(func(r *http.Request) string { return "gov:" + r.RemoteAddr }, 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -73,10 +77,11 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "model.deploy", modelName+":"+version); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
+		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	r.Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(func(r *http.Request) string { return "replay:" + r.RemoteAddr }, 5, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -110,7 +115,11 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "replay.start", id); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
-		httpx.JSON(w, http.StatusOK, map[string]string{"id": id})
+		go func(id string) {
+			_ = replay.Run(context.Background(), pool, id)
+			cache.InvalidateByPrefixes(context.Background(), "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+		}(id)
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued"})
 	})
 
 	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
