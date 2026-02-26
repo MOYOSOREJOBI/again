@@ -35,3 +35,15 @@ func TestParseFiltersNormalizesAndBackCompat(t *testing.T) {
 		t.Fatalf("expected country alias propagation")
 	}
 }
+
+func TestNormalizeReplayViewMode(t *testing.T) {
+	if got := normalizeReplayViewMode("as_scored"); got != "as_scored" {
+		t.Fatalf("expected as_scored, got %s", got)
+	}
+	if got := normalizeReplayViewMode("recomputed"); got != "recomputed" {
+		t.Fatalf("expected recomputed, got %s", got)
+	}
+	if got := normalizeReplayViewMode("invalid"); got != "recomputed" {
+		t.Fatalf("expected default recomputed, got %s", got)
+	}
+}

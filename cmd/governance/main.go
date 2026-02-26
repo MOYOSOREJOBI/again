@@ -49,6 +49,13 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.CORS)
+	r.Use(middleware.RequireCSRFFunc(func(r *http.Request) (string, bool) {
+		claims, ok := authn(r, pub)
+		if !ok {
+			return "", false
+		}
+		return claims.Subject, true
+	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", readinessHandler(pool))
 	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +134,7 @@ func main() {
 			End               time.Time `json:"end"`
 			ModelVersion      string    `json:"model_version"`
 			FeatureSetVersion string    `json:"feature_set_version"`
+			ReplayMode        string    `json:"replay_mode"`
 		}
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
 		if req.Start.IsZero() {
@@ -141,8 +149,9 @@ func main() {
 		if req.FeatureSetVersion == "" {
 			req.FeatureSetVersion = "v2"
 		}
+		req.ReplayMode = normalizeReplayMode(req.ReplayMode)
 		var id string
-		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,'recompute','wm_v1',5000,$4,$5) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
+		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,$4,'wm_v1',5000,$5,$6) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ReplayMode, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
 			logger.Error("start replay failed", map[string]any{"error": err.Error()})
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -154,7 +163,7 @@ func main() {
 			_ = replay.Run(context.Background(), pool, id)
 			cache.InvalidateByPrefixes(context.Background(), cache.ReadModelPrefixes()...)
 		}(id)
-		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued"})
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued", "replay_mode": req.ReplayMode})
 	})
 
 	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
@@ -262,5 +271,14 @@ func rateLimitSubjectKey(prefix string) func(*http.Request) string {
 			return prefix + ":cookie:" + c.Value
 		}
 		return prefix + ":ip:" + r.RemoteAddr
+	}
+}
+
+func normalizeReplayMode(in string) string {
+	switch in {
+	case "as_scored", "recompute":
+		return in
+	default:
+		return "recompute"
 	}
 }

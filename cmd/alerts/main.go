@@ -26,6 +26,7 @@ import (
 	"sentinel/internal/incidents"
 	"sentinel/internal/kafka"
 	"sentinel/internal/logging"
+	"sentinel/internal/middleware"
 	"sentinel/internal/rbac"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -67,7 +68,15 @@ func main() {
 	go consumeScores(ctx, logger, pool, c, p)
 
 	r := chi.NewRouter()
-	r.Use(corsMiddleware)
+	r.Use(middleware.RequestID)
+	r.Use(middleware.CORS)
+	r.Use(middleware.RequireCSRFFunc(func(r *http.Request) (string, bool) {
+		claims, ok := authn(r, pub)
+		if !ok {
+			return "", false
+		}
+		return claims.Subject, true
+	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)

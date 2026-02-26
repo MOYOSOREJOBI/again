@@ -208,7 +208,7 @@ func main() {
 				}
 			}
 			replays := []map[string]any{}
-			rp, err := pool.Query(r.Context(), `SELECT id::text,status,requested_at,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs ORDER BY requested_at DESC LIMIT 25`)
+			rp, err := pool.Query(r.Context(), `SELECT id::text,status,requested_at,started_at,completed_at,replay_mode,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs ORDER BY requested_at DESC LIMIT 25`)
 			if err == nil {
 				defer rp.Close()
 				for rp.Next() {
@@ -224,17 +224,26 @@ func main() {
 		})
 		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "job")
-			var status, mv, fv, wp string
+			var status, replayMode, mv, fv, wp string
 			var late int
 			var s, e, started, completed any
-			if err := pool.QueryRow(r.Context(), `SELECT status,time_window_start,time_window_end,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs WHERE id=$1`, id).Scan(&status, &s, &e, &started, &completed, &mv, &fv, &wp, &late); err != nil {
+			if err := pool.QueryRow(r.Context(), `SELECT status,replay_mode,time_window_start,time_window_end,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs WHERE id=$1`, id).Scan(&status, &replayMode, &s, &e, &started, &completed, &mv, &fv, &wp, &late); err != nil {
 				http.Error(w, "not found", 404)
 				return
 			}
 			var result any = map[string]any{}
 			_ = pool.QueryRow(r.Context(), `SELECT diff_summary FROM replay_runs WHERE id=$1`, id).Scan(&result)
+			selectedMode := normalizeReplayViewMode(r.URL.Query().Get("mode"))
 			partial := status != "completed"
-			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"deterministic replay scoring uses return-based approximation"}})
+			resp := map[string]any{"id": id, "status": status, "replayMode": replayMode, "selectedMode": selectedMode, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"deterministic replay scoring uses return-based approximation"}}
+			if m, ok := result.(map[string]any); ok {
+				if selectedMode == "as_scored" {
+					resp["selectedStats"] = m["as_scored"]
+				} else {
+					resp["selectedStats"] = m["recomputed"]
+				}
+			}
+			httpx.JSON(w, 200, resp)
 		})
 		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "id")
@@ -358,6 +367,15 @@ func parseFilters(r *http.Request) filters {
 		country = q.Get("country")
 	}
 	return filters{Window: tw, From: from, To: to, CountryCode: country, Region: q.Get("region"), Sector: q.Get("sector"), Industry: q.Get("industry"), Venue: q.Get("venue"), Symbol: q.Get("symbol"), Locale: q.Get("locale")}
+}
+
+func normalizeReplayViewMode(in string) string {
+	switch in {
+	case "as_scored", "recomputed":
+		return in
+	default:
+		return "recomputed"
+	}
 }
 
 func normalizeWindow(in string) string {

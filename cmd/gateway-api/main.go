@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -53,12 +54,14 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	r.With(middleware.RateLimit(func(r *http.Request) string {
-		return "login:" + clientIP(r)
-	}, 5, 5*time.Minute)).Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+	r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Email, Password string }
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 			http.Error(w, "bad request", 400)
+			return
+		}
+		if !loginAllowed(clientIP(r), in.Email) {
+			http.Error(w, "too many attempts", http.StatusTooManyRequests)
 			return
 		}
 		var hash, role string
@@ -134,4 +137,24 @@ func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
 		return nil, false
 	}
 	return claims, true
+}
+
+type loginLimitEntry struct {
+	Count int
+	Reset time.Time
+}
+
+var loginAttempts sync.Map
+
+func loginAllowed(ip, email string) bool {
+	key := "login:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
+	now := time.Now()
+	v, _ := loginAttempts.LoadOrStore(key, loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)})
+	e := v.(loginLimitEntry)
+	if now.After(e.Reset) {
+		e = loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)}
+	}
+	e.Count++
+	loginAttempts.Store(key, e)
+	return e.Count <= 5
 }

@@ -12,6 +12,7 @@ type Job struct {
 	AllowedLatenessMS int
 	ModelVersion      string
 	FeatureSetVersion string
+	ReplayMode        string
 }
 
 type Tick struct {
