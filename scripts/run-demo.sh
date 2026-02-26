@@ -24,6 +24,7 @@ LOGIN_JSON='{"Email":"admin@sentinel.local","Password":"Sentinel#123"}'
 curl -fsS -c "$COOKIE_JAR" -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' -d "$LOGIN_JSON" >/dev/null
 CSRF=$(awk '/sentinel_csrf/ {print $7}' "$COOKIE_JAR" | tail -n1)
 [ -n "$CSRF" ]
+curl -fsS -b "$COOKIE_JAR" http://localhost:8085/command-center >/dev/null
 curl -fsS -b "$COOKIE_JAR" http://localhost:8085/queue >/dev/null
 curl -fsS -b "$COOKIE_JAR" http://localhost:8085/trust >/dev/null
 curl -fsS -b "$COOKIE_JAR" http://localhost:8085/world-map >/dev/null
