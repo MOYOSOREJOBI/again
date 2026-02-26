@@ -2,12 +2,30 @@ import json
 import logging
 import os
 import signal
+import sys
 import threading
 import time
+from pathlib import Path
 
 from flask import Flask, Response
 from kafka import KafkaConsumer, KafkaProducer
-from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
+
+SERVICE_DIR = Path(__file__).resolve().parent
+if str(SERVICE_DIR) not in sys.path:
+    sys.path.insert(0, str(SERVICE_DIR))
+
+from src.artifacts import snapshot_hash
+from src.explain import fallback_explanation
+from src.fallbacks import (
+    fallback_anomaly,
+    fallback_escalation,
+    fallback_priority,
+    fallback_rank_reason,
+    fallback_recommended_action,
+)
+from src.models import load_model
+from src.scoring import clip, composite_risk, confidence_bound, expected_severity_band
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -46,36 +64,46 @@ def metrics():
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 
-def severity(score: float) -> str:
-    if score > 0.8:
-        return 'critical'
-    if score > 0.6:
-        return 'high'
-    if score > 0.4:
-        return 'medium'
-    return 'low'
-
-
-def load_model() -> dict:
-    path = os.getenv('MODEL_CONFIG_PATH', '')
-    if not path:
-        return {'name': 'baseline', 'version': 'v1'}
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def build_output(m: dict) -> dict:
+def build_output(m: dict, model: dict | None = None) -> dict:
+    model = model or load_model()
     payload = m.get('payload', {})
-    lr = payload.get('log_return', 0)
     symbol = m.get('symbol', '')
     if not symbol:
         raise ValueError('symbol is required')
-    score = min(0.99, abs(lr) * 2)
+
+    raw, norm = fallback_anomaly(payload)
+    escalation = fallback_escalation(payload)
+    dq = clip(float(payload.get('missingness_rate', 0.0)) + float(payload.get('out_of_order_rate', 0.0)))
+    trust_penalty = clip(dq)
+    composite = composite_risk(norm, escalation, clip(abs(float(payload.get('ewma_vol_30', 0.2)))), clip(float(payload.get('incident_pressure', 0.1))), clip(float(payload.get('business_weight', 0.1))), trust_penalty)
+    conf = confidence_bound(0.9 if not model.get('degraded_mode', True) else 0.75, bool(model.get('degraded_mode', True)))
+    priority = fallback_priority(composite, payload, trust_penalty)
+    rank_reason = fallback_rank_reason(composite, priority, conf, trust_penalty)
+    recommended_action = fallback_recommended_action(priority, conf, trust_penalty)
+    explanation_payload = fallback_explanation(payload, trust_penalty)
+
     return {
         'symbol': symbol,
-        'score': score,
-        'severity': severity(score),
-        'explanation': f'abs(log_return)={abs(lr):.4f}',
+        'score': composite,
+        'raw_anomaly_score': raw,
+        'normalized_anomaly_score': norm,
+        'escalation_probability': escalation,
+        'confidence': conf,
+        'expected_severity_band': expected_severity_band(composite, trust_penalty),
+        'priority_score': priority,
+        'rank_reason': rank_reason,
+        'recommended_action': recommended_action,
+        'composite_risk': composite,
+        'feature_snapshot_hash': snapshot_hash(payload),
+        'feature_set_version': model.get('feature_set_version', 'v1'),
+        'model_version': model.get('version', 'baseline-v1'),
+        'model_name': model.get('name', 'baseline'),
+        'deployment_status': 'fallback' if model.get('degraded_mode', True) else 'deployed',
+        'model_unavailable': bool(model.get('degraded_mode', True)),
+        'artifact_hash': model.get('artifact_hash', ''),
+        'explanation': explanation_payload['summary'],
+        'explanation_payload': explanation_payload,
+        'severity': expected_severity_band(composite, trust_penalty),
         'ts': time.time(),
     }
 
@@ -84,25 +112,18 @@ def run():
     global running, kafka_ready, model_loaded
     logger.info('Starting inference consumer on topic %s', CONSUMER_TOPIC)
     try:
-        _ = load_model()
+        model = load_model()
         model_loaded = True
     except Exception as e:
         logger.error('Model load failed: %s', e)
         model_loaded = False
         return
+
     LOOP_RUNNING.set(0)
     while running:
         try:
-            c = KafkaConsumer(
-                CONSUMER_TOPIC,
-                bootstrap_servers=[BROKER],
-                value_deserializer=lambda v: json.loads(v.decode()),
-                consumer_timeout_ms=5000,
-            )
-            p = KafkaProducer(
-                bootstrap_servers=[BROKER],
-                value_serializer=lambda v: json.dumps(v).encode(),
-            )
+            c = KafkaConsumer(CONSUMER_TOPIC, bootstrap_servers=[BROKER], value_deserializer=lambda v: json.loads(v.decode()), consumer_timeout_ms=5000)
+            p = KafkaProducer(bootstrap_servers=[BROKER], value_serializer=lambda v: json.dumps(v).encode())
             LOOP_RUNNING.set(1)
             kafka_ready = True
             break
@@ -122,9 +143,8 @@ def run():
                     MESSAGES_CONSUMED.inc()
                     m = msg.value
                     if not isinstance(m, dict):
-                        logger.warning('Skipping non-dict message')
                         continue
-                    out = build_output(m)
+                    out = build_output(m, model)
                     p.send(PRODUCER_TOPIC, out)
                     p.flush()
                     MESSAGES_PRODUCED.inc()
@@ -146,7 +166,6 @@ def run():
             p.close()
         except Exception:
             pass
-        logger.info('Inference consumer stopped')
 
 
 def signal_handler(sig, frame):
@@ -158,10 +177,7 @@ def signal_handler(sig, frame):
 if __name__ == '__main__':
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
-
     t = threading.Thread(target=run, daemon=True)
     t.start()
-
     port = int(os.getenv('PORT', '8090'))
-    logger.info('Starting Flask on port %d', port)
     app.run(host='0.0.0.0', port=port, debug=False)

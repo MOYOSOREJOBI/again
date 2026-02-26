@@ -49,6 +49,7 @@ func main() {
 
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
+	r.Use(requireCSRF)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := dbpool.Ping(ctx); err != nil {
@@ -59,6 +60,7 @@ func main() {
 	})
 
 	r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		csrfToken := time.Now().UTC().Format("20060102150405")
 		var in struct{ Email, Password string }
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -84,7 +86,7 @@ func main() {
 			Name:     "sentinel_token",
 			Value:    tok,
 			HttpOnly: true,
-			Secure:   false,
+			Secure:   os.Getenv("COOKIE_SECURE") == "true",
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 			Expires:  time.Now().Add(24 * time.Hour),
@@ -92,7 +94,8 @@ func main() {
 		if err := audit.Append(ctx, dbpool, in.Email, "login", "success"); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
-		httpx.JSON(w, http.StatusOK, map[string]any{"token": tok, "role": role})
+		http.SetCookie(w, &http.Cookie{Name: "sentinel_csrf", Value: csrfToken, HttpOnly: false, Secure: os.Getenv("COOKIE_SECURE") == "true", SameSite: http.SameSiteLaxMode, Path: "/", Expires: time.Now().Add(24 * time.Hour)})
+		httpx.JSON(w, http.StatusOK, map[string]any{"token": tok, "role": role, "csrf": csrfToken})
 	})
 
 	r.Post("/auth/logout", func(w http.ResponseWriter, r *http.Request) {
@@ -100,11 +103,12 @@ func main() {
 			Name:     "sentinel_token",
 			Value:    "",
 			HttpOnly: true,
-			Secure:   false,
+			Secure:   os.Getenv("COOKIE_SECURE") == "true",
 			SameSite: http.SameSiteLaxMode,
 			Path:     "/",
 			MaxAge:   -1,
 		})
+		http.SetCookie(w, &http.Cookie{Name: "sentinel_csrf", Value: "", HttpOnly: false, Secure: os.Getenv("COOKIE_SECURE") == "true", SameSite: http.SameSiteLaxMode, Path: "/", MaxAge: -1})
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -175,10 +179,26 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Correlation-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Correlation-ID, X-CSRF-Token")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requireCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodOptions || r.URL.Path == "/auth/login" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		h := r.Header.Get("X-CSRF-Token")
+		c, err := r.Cookie("sentinel_csrf")
+		if err != nil || h == "" || c.Value != h {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -1,0 +1,3 @@
+export default function GlossaryPage() {
+  return <main style={{ padding: 24 }}><h1>Glossary</h1><ul><li><b>Anomaly score</b>: baseline outlier magnitude from feature behavior.</li><li><b>Escalation probability</b>: likelihood the incident needs analyst action.</li><li><b>Priority score</b>: queue ordering score combining risk and pressure.</li><li><b>Composite risk</b>: bounded combination of anomaly, escalation, context, and trust penalty.</li><li><b>Trust penalty</b>: reduction due to data quality degradation.</li><li><b>Incident</b>: clustered alert group for triage.</li><li><b>Case</b>: investigation record created from an incident.</li><li><b>Replay</b>: historical reconstruction metadata and status.</li></ul></main>
+}

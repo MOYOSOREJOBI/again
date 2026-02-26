@@ -12,12 +12,21 @@ else
   COMPOSE="docker compose -f deploy/docker/docker-compose.yml"
 fi
 
-# Bring up infrastructure first so topics and migrations are deterministic.
 $COMPOSE up -d redpanda postgres redis
-./scripts/create-topics.sh
-
-# Start application services only after topics exist.
-$COMPOSE up -d --build gateway-api simulator aggregator features inference alerts governance query web prometheus grafana
 ./scripts/migrate.sh
+./scripts/create-topics.sh
+$COMPOSE up -d --build gateway-api simulator aggregator features inference alerts governance query web prometheus grafana
 make seed
+
+curl -fsS http://localhost:8080/healthz >/dev/null
+COOKIE_JAR=$(mktemp)
+LOGIN_JSON='{"Email":"admin@sentinel.local","Password":"Sentinel#123"}'
+curl -fsS -c "$COOKIE_JAR" -X POST http://localhost:8080/auth/login -H 'Content-Type: application/json' -d "$LOGIN_JSON" >/dev/null
+CSRF=$(awk '/sentinel_csrf/ {print $7}' "$COOKIE_JAR" | tail -n1)
+[ -n "$CSRF" ]
+curl -fsS -b "$COOKIE_JAR" http://localhost:8085/queue >/dev/null
+curl -fsS -b "$COOKIE_JAR" http://localhost:8085/trust >/dev/null
+curl -fsS -b "$COOKIE_JAR" http://localhost:8085/world-map >/dev/null
+rm -f "$COOKIE_JAR"
+
 echo "Sentinel Demo Ready ($mode)"

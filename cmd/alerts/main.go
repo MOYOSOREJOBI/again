@@ -21,9 +21,13 @@ import (
 	"sentinel/internal/auth"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/httpx"
+	"sentinel/internal/incidents"
 	"sentinel/internal/kafka"
 	"sentinel/internal/logging"
 	"sentinel/internal/rbac"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var subs = struct {
@@ -34,83 +38,39 @@ var subs = struct {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	logger := logging.New("alerts")
 	cfg := config.Load("alerts")
 	if err := config.Validate(cfg); err != nil {
 		log.Fatalf("alerts: invalid config: %v", err)
 	}
-
 	pool, err := db.Connect(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("alerts: failed to connect to database: %v", err)
 	}
 	defer pool.Close()
-
 	pub, err := auth.ReadPublic(cfg.JWTPublicKey)
 	if err != nil {
 		log.Fatalf("alerts: failed to read JWT public key: %v", err)
 	}
-
 	c, err := kafka.New(cfg.KafkaBrokers, "alerts", "derived.scores")
 	if err != nil {
 		log.Fatalf("alerts: failed to create kafka consumer: %v", err)
 	}
 	defer c.Close()
-
 	p, err := kafka.New(cfg.KafkaBrokers, "")
 	if err != nil {
 		log.Fatalf("alerts: failed to create kafka producer: %v", err)
 	}
 	defer p.Close()
 
-	go func() {
-		for {
-			f := c.PollFetches(ctx)
-			if ctx.Err() != nil {
-				return
-			}
-			f.EachRecord(func(rec *kgo.Record) {
-				var m map[string]any
-				if err := json.Unmarshal(rec.Value, &m); err != nil {
-					logger.Error("unmarshal score failed", map[string]any{"error": err.Error()})
-					return
-				}
-				symbol, _ := m["symbol"].(string)
-				sev, _ := m["severity"].(string)
-				explanation, _ := m["explanation"].(string)
-				score, _ := m["score"].(float64)
-				if symbol == "" {
-					return
-				}
-				ts := scoreTS(m)
-				idempotency := scoreIdempotencyKey(symbol, ts, score, sev, explanation)
-				if _, err := pool.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, idempotency, symbol, ts, score, sev, explanation); err != nil {
-					logger.Error("insert score failed", map[string]any{"error": err.Error()})
-				}
-				if sev == "" || sev == "low" {
-					return
-				}
-				if _, err := pool.Exec(ctx, `INSERT INTO alerts(symbol,status,justification) VALUES($1,'open','auto')`, symbol); err != nil {
-					logger.Error("insert alert failed", map[string]any{"error": err.Error()})
-				}
-				if err := kafka.ProduceJSON(ctx, p, "alerts.created", symbol, m); err != nil {
-					logger.Error("produce alert msg failed", map[string]any{"error": err.Error()})
-				}
-				if err := audit.Append(ctx, pool, "system", "alert.create", symbol); err != nil {
-					logger.Error("audit append failed", map[string]any{"error": err.Error()})
-				}
-				broadcast(fmt.Sprintf("event: alert\ndata: %s\n\n", string(rec.Value)))
-			})
-		}
-	}()
+	go consumeScores(ctx, logger, pool, c, p)
 
 	r := chi.NewRouter()
 	r.Use(corsMiddleware)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		probeCtx, probeCancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer probeCancel()
+		probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
 		if err := pool.Ping(probeCtx); err != nil {
 			http.Error(w, "database not ready", http.StatusServiceUnavailable)
 			return
@@ -126,6 +86,7 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 	r.Get("/sse/alerts", sse)
+
 	r.Post("/alerts/{id}/ack", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
@@ -134,40 +95,287 @@ func main() {
 		}
 		id := chi.URLParam(r, "id")
 		if _, err := pool.Exec(ctx, `UPDATE alerts SET status='ack',updated_at=now() WHERE id=$1`, id); err != nil {
-			logger.Error("ack alert failed", map[string]any{"error": err.Error(), "id": id})
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		if err := audit.Append(ctx, pool, claims.Subject, "alert.ack", id); err != nil {
-			logger.Error("audit append failed", map[string]any{"error": err.Error(), "id": id})
-		}
+		_ = audit.Append(ctx, pool, claims.Subject, "alert.ack", id)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	srv := &http.Server{
-		Addr:         cfg.HTTPAddr,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  60 * time.Second,
-	}
+	r.Post("/cases", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		var in struct {
+			IncidentID int64  `json:"incident_id"`
+			Reason     string `json:"reason"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.IncidentID == 0 || in.Reason == "" {
+			http.Error(w, "incident_id and reason required", http.StatusBadRequest)
+			return
+		}
+		createCase(ctx, w, pool, claims.Subject, in.IncidentID, in.Reason)
+	})
 
+	r.Post("/incidents/{id}/promote-case", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		var in struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Reason == "" {
+			http.Error(w, "reason required", http.StatusBadRequest)
+			return
+		}
+		var incidentID int64
+		if _, err := fmt.Sscan(chi.URLParam(r, "id"), &incidentID); err != nil || incidentID == 0 {
+			http.Error(w, "invalid incident id", http.StatusBadRequest)
+			return
+		}
+		createCase(ctx, w, pool, claims.Subject, incidentID, in.Reason)
+	})
+
+	r.Get("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !rbac.Allowed(claims.Role, "read") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		out := map[string]any{}
+		var incidentID int64
+		var cid int64
+		var status, reason, owner string
+		var createdAt, updatedAt any
+		if err := pool.QueryRow(ctx, `SELECT id,incident_id,status,reason,coalesce(owner_name,''),created_at,updated_at FROM cases WHERE id=$1`, id).Scan(&cid, &incidentID, &status, &reason, &owner, &createdAt, &updatedAt); err != nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		out["id"] = cid
+		out["status"] = status
+		out["reason"] = reason
+		out["owner"] = owner
+		out["created_at"] = createdAt
+		out["updated_at"] = updatedAt
+		out["incident_id"] = incidentID
+		out["notes"] = fetchRows(pool, ctx, `SELECT id,actor,note,created_at FROM case_notes WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "actor", "note", "created_at"})
+		out["evidence"] = fetchRows(pool, ctx, `SELECT id,evidence_type,reference_id,metadata,created_at FROM case_evidence WHERE case_id=$1 ORDER BY id DESC`, id, []string{"id", "evidence_type", "reference_id", "metadata", "created_at"})
+		httpx.JSON(w, http.StatusOK, out)
+	})
+
+	r.Patch("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Status string `json:"status"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Status == "" {
+			http.Error(w, "status required", http.StatusBadRequest)
+			return
+		}
+		if _, err := pool.Exec(ctx, `UPDATE cases SET status=$2,updated_at=now() WHERE id=$1`, id, in.Status); err != nil {
+			http.Error(w, "failed", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "case.status", id+":"+in.Status)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	r.Post("/cases/{id}/notes", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Note string `json:"note"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Note == "" {
+			http.Error(w, "note required", http.StatusBadRequest)
+			return
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO case_notes(case_id,actor,note) VALUES($1,$2,$3)`, id, claims.Subject, in.Note); err != nil {
+			http.Error(w, "failed to add note", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "case.note", id)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	r.Post("/cases/{id}/evidence", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			EvidenceType string         `json:"evidence_type"`
+			ReferenceID  string         `json:"reference_id"`
+			Metadata     map[string]any `json:"metadata"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.EvidenceType == "" || in.ReferenceID == "" {
+			http.Error(w, "evidence_type and reference_id required", http.StatusBadRequest)
+			return
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO case_evidence(case_id,evidence_type,reference_id,metadata) VALUES($1,$2,$3,$4)`, id, in.EvidenceType, in.ReferenceID, in.Metadata); err != nil {
+			http.Error(w, "failed", http.StatusInternalServerError)
+			return
+		}
+		_ = audit.Append(ctx, pool, claims.Subject, "case.evidence", id+":"+in.ReferenceID)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	r.Post("/cases/{id}/disposition", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !(rbac.Allowed(claims.Role, "alerts:write") || rbac.Allowed(claims.Role, "*")) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		id := chi.URLParam(r, "id")
+		var in struct {
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil || in.Status == "" || in.Reason == "" {
+			http.Error(w, "status and reason required", http.StatusBadRequest)
+			return
+		}
+		if _, err := pool.Exec(ctx, `UPDATE cases SET status=$2,updated_at=now() WHERE id=$1`, id, in.Status); err != nil {
+			http.Error(w, "failed", http.StatusInternalServerError)
+			return
+		}
+		_, _ = pool.Exec(ctx, `INSERT INTO case_notes(case_id,actor,note) VALUES($1,$2,$3)`, id, claims.Subject, "disposition: "+in.Reason)
+		_ = audit.Append(ctx, pool, claims.Subject, "case.disposition", id+":"+in.Status)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: r, ReadTimeout: 15 * time.Second, WriteTimeout: 0, IdleTimeout: 60 * time.Second}
 	go func() {
 		logger.Info("starting server", map[string]any{"addr": cfg.HTTPAddr})
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("alerts: server error: %v", err)
 		}
 	}()
-
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Info("shutting down", nil)
 	cancel()
-
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
+}
+
+func consumeScores(ctx context.Context, logger logging.Logger, pool *pgxpool.Pool, c *kgo.Client, p *kgo.Client) {
+	for {
+		f := c.PollFetches(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		f.EachRecord(func(rec *kgo.Record) {
+			var m map[string]any
+			if err := json.Unmarshal(rec.Value, &m); err != nil {
+				logger.Error("unmarshal score failed", map[string]any{"error": err.Error()})
+				return
+			}
+			symbol, _ := m["symbol"].(string)
+			sev, _ := m["severity"].(string)
+			explanation, _ := m["explanation"].(string)
+			score, _ := m["score"].(float64)
+			escalation, _ := m["escalation_probability"].(float64)
+			confidence, _ := m["confidence"].(float64)
+			featureHash, _ := m["feature_snapshot_hash"].(string)
+			modelVersion, _ := m["model_version"].(string)
+			if symbol == "" {
+				return
+			}
+			if confidence == 0 {
+				confidence = 0.8
+			}
+			if modelVersion == "" {
+				modelVersion = "baseline-v1"
+			}
+			ts := scoreTS(m)
+			idempotency := scoreIdempotencyKey(symbol, ts, score, sev, explanation)
+			var scoreID int64
+			if err := pool.QueryRow(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,raw_anomaly_score,normalized_anomaly_score,escalation_probability,priority_score,composite_risk,feature_snapshot_hash,model_version,explanation_payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11,$12,$13) ON CONFLICT (idempotency_key,ts) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id`, idempotency, symbol, ts, score, sev, explanation, score, score, escalation, score, featureHash, modelVersion, map[string]any{"explanation": explanation}).Scan(&scoreID); err != nil {
+				return
+			}
+			if sev == "" || sev == "stable" || sev == "low" {
+				return
+			}
+			incidentID, err := incidents.FindOrCreateOpenIncident(ctx, pool, symbol, score, escalation, confidence, featureHash, modelVersion, ts)
+			if err != nil {
+				return
+			}
+			var alertID int64
+			if err := pool.QueryRow(ctx, `INSERT INTO alerts(score_id,incident_id,symbol,status,justification) VALUES($1,$2,$3,'open','auto') RETURNING id`, scoreID, incidentID, symbol).Scan(&alertID); err != nil {
+				return
+			}
+			_, _ = pool.Exec(ctx, `INSERT INTO incident_alert_links(incident_id,alert_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, incidentID, alertID)
+			_ = kafka.ProduceJSON(ctx, p, "alerts.created", symbol, m)
+			_ = audit.Append(ctx, pool, "system", "alert.create", symbol)
+			broadcast(fmt.Sprintf("event: alert\ndata: %s\n\n", string(rec.Value)))
+		})
+	}
+}
+
+func createCase(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, actor string, incidentID int64, reason string) {
+	var incidentStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM incidents WHERE id=$1`, incidentID).Scan(&incidentStatus); err != nil {
+		http.Error(w, "incident not found", http.StatusNotFound)
+		return
+	}
+	if !incidents.CanPromoteToCase(incidentStatus) {
+		http.Error(w, "incident cannot be promoted", http.StatusConflict)
+		return
+	}
+	var existing int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM cases WHERE incident_id=$1 AND status IN ('open','investigating','escalated') ORDER BY id DESC LIMIT 1`, incidentID).Scan(&existing); err == nil {
+		httpx.JSON(w, http.StatusOK, map[string]any{"case_id": existing, "reused": true})
+		return
+	}
+	var caseID int64
+	if err := pool.QueryRow(ctx, `INSERT INTO cases(incident_id,reason,owner_name) VALUES($1,$2,$3) RETURNING id`, incidentID, reason, actor).Scan(&caseID); err != nil {
+		http.Error(w, "failed to create case", http.StatusInternalServerError)
+		return
+	}
+	_ = audit.Append(ctx, pool, actor, "case.create", fmt.Sprintf("%d", caseID))
+	httpx.JSON(w, http.StatusCreated, map[string]any{"case_id": caseID, "reused": false})
+}
+
+func fetchRows(pool *pgxpool.Pool, ctx context.Context, q, id string, cols []string) []map[string]any {
+	rows, err := pool.Query(ctx, q, id)
+	if err != nil {
+		return []map[string]any{}
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if rows.Scan(ptrs...) == nil {
+			m := map[string]any{}
+			for i, c := range cols {
+				m[c] = vals[i]
+			}
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func scoreTS(m map[string]any) time.Time {
@@ -260,7 +468,7 @@ func broadcast(msg string) {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {

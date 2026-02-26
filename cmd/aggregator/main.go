@@ -31,25 +31,21 @@ type Tick struct {
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	logger := logging.New("aggregator")
 	cfg := config.Load("aggregator")
 	if err := config.Validate(cfg); err != nil {
 		log.Fatalf("aggregator: invalid config: %v", err)
 	}
-
 	pool, err := db.Connect(ctx, cfg.PostgresURL)
 	if err != nil {
 		log.Fatalf("aggregator: failed to connect to database: %v", err)
 	}
 	defer pool.Close()
-
 	client, err := kafka.New(cfg.KafkaBrokers, "aggregator", "raw.ticks")
 	if err != nil {
 		log.Fatalf("aggregator: failed to create kafka consumer: %v", err)
 	}
 	defer client.Close()
-
 	prod, err := kafka.New(cfg.KafkaBrokers, "")
 	if err != nil {
 		log.Fatalf("aggregator: failed to create kafka producer: %v", err)
@@ -91,46 +87,66 @@ func main() {
 			}
 			fetches.EachRecord(func(rec *kgo.Record) {
 				var t Tick
-				if err := json.Unmarshal(rec.Value, &t); err != nil {
-					logger.Error("unmarshal tick failed", map[string]any{"error": err.Error()})
-					return
-				}
-				if t.Symbol == "" {
-					logger.Error("tick missing symbol", nil)
+				if err := json.Unmarshal(rec.Value, &t); err != nil || t.Symbol == "" {
 					return
 				}
 				if t.EventTime.IsZero() {
 					t.EventTime = time.Now().UTC()
 				}
+
 				tx, err := pool.Begin(ctx)
 				if err != nil {
-					logger.Error("begin tx failed", map[string]any{"error": err.Error()})
 					return
 				}
 				defer tx.Rollback(ctx)
 
-				if _, err := tx.Exec(ctx, `INSERT INTO raw_ticks(event_id,symbol,price,volume,event_time) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, t.EventID, t.Symbol, t.Price, t.Volume, t.EventTime); err != nil {
-					logger.Error("insert raw_tick failed", map[string]any{"error": err.Error()})
+				ct, err := tx.Exec(ctx, `INSERT INTO raw_ticks(event_id,symbol,price,volume,event_time) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, t.EventID, t.Symbol, t.Price, t.Volume, t.EventTime)
+				if err != nil {
 					return
 				}
-				bucket := t.EventTime.Truncate(time.Second)
-				h := sha256.Sum256([]byte(t.Symbol + bucket.String() + "1s"))
-				key := hex.EncodeToString(h[:])
-				if _, err := tx.Exec(ctx, `INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume) VALUES($1,$2,$3,'1s',$4,$4,$4,$4,$5) ON CONFLICT DO NOTHING`, key, t.Symbol, bucket, t.Price, t.Volume); err != nil {
-					logger.Error("insert candle 1s failed", map[string]any{"error": err.Error()})
+				if ct.RowsAffected() == 0 {
+					return
+				} // duplicate event: no side effects
+
+				bucket1s := t.EventTime.Truncate(time.Second)
+				bucket1m := t.EventTime.Truncate(time.Minute)
+				h1 := sha256.Sum256([]byte(t.Symbol + bucket1s.Format(time.RFC3339Nano) + "1s"))
+				k1 := hex.EncodeToString(h1[:])
+				hm := sha256.Sum256([]byte(t.Symbol + bucket1m.Format(time.RFC3339Nano) + "1m"))
+				km := hex.EncodeToString(hm[:])
+
+				if _, err := tx.Exec(ctx, `
+INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume,open_event_time,close_event_time)
+VALUES($1,$2,$3,'1s',$4,$4,$4,$4,$5,$6,$6)
+ON CONFLICT (idempotency_key,bucket) DO UPDATE SET
+	high=GREATEST(candles.high,EXCLUDED.high),
+	low=LEAST(candles.low,EXCLUDED.low),
+	open=CASE WHEN EXCLUDED.open_event_time < candles.open_event_time THEN EXCLUDED.open ELSE candles.open END,
+	open_event_time=LEAST(candles.open_event_time,EXCLUDED.open_event_time),
+	close=CASE WHEN EXCLUDED.close_event_time >= candles.close_event_time THEN EXCLUDED.close ELSE candles.close END,
+	close_event_time=GREATEST(candles.close_event_time,EXCLUDED.close_event_time),
+	volume=candles.volume+EXCLUDED.volume`, k1, t.Symbol, bucket1s, t.Price, t.Volume, t.EventTime); err != nil {
 					return
 				}
-				if _, err := tx.Exec(ctx, `INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume) VALUES($1,$2,$3,'1m',$4,$4,$4,$4,$5) ON CONFLICT DO NOTHING`, key+"m", t.Symbol, t.EventTime.Truncate(time.Minute), t.Price, t.Volume); err != nil {
-					logger.Error("insert candle 1m failed", map[string]any{"error": err.Error()})
+
+				if _, err := tx.Exec(ctx, `
+INSERT INTO candles(idempotency_key,symbol,bucket,interval,open,high,low,close,volume,open_event_time,close_event_time)
+VALUES($1,$2,$3,'1m',$4,$4,$4,$4,$5,$6,$6)
+ON CONFLICT (idempotency_key,bucket) DO UPDATE SET
+	high=GREATEST(candles.high,EXCLUDED.high),
+	low=LEAST(candles.low,EXCLUDED.low),
+	open=CASE WHEN EXCLUDED.open_event_time < candles.open_event_time THEN EXCLUDED.open ELSE candles.open END,
+	open_event_time=LEAST(candles.open_event_time,EXCLUDED.open_event_time),
+	close=CASE WHEN EXCLUDED.close_event_time >= candles.close_event_time THEN EXCLUDED.close ELSE candles.close END,
+	close_event_time=GREATEST(candles.close_event_time,EXCLUDED.close_event_time),
+	volume=candles.volume+EXCLUDED.volume`, km, t.Symbol, bucket1m, t.Price, t.Volume, t.EventTime); err != nil {
 					return
 				}
+
 				if err := tx.Commit(ctx); err != nil {
-					logger.Error("commit failed", map[string]any{"error": err.Error()})
 					return
 				}
-				if err := kafka.ProduceJSON(ctx, prod, "derived.candles", t.Symbol, map[string]any{"symbol": t.Symbol, "bucket": bucket, "price": t.Price, "volume": t.Volume}); err != nil {
-					logger.Error("produce candle msg failed", map[string]any{"error": err.Error()})
-				}
+				_ = kafka.ProduceJSON(ctx, prod, "derived.candles", t.Symbol, map[string]any{"symbol": t.Symbol, "bucket": bucket1s, "price": t.Price, "volume": t.Volume, "event_time": t.EventTime, "version": "v2"})
 			})
 		}
 	}()
@@ -138,9 +154,7 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logger.Info("shutting down", nil)
 	cancel()
-
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	srv.Shutdown(shutdownCtx)
