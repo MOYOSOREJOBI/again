@@ -8,7 +8,7 @@ import { api, type GlobalFilters } from '../../lib/api'
 import { subscribeQueuePatches } from '../../lib/stream'
 
 export default function QueuePage() {
-  const [filters, setFilters] = useState<GlobalFilters>({ time_window: '24h' })
+  const [filters, setFilters] = useState<GlobalFilters>({ window: '24h' })
   const [rows, setRows] = useState<any[] | null>(null)
   const [degraded, setDegraded] = useState(false)
 
