@@ -82,6 +82,7 @@ func main() {
 			claims, _ := authn(r, pub)
 			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool, f.TimeWindow) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -92,6 +93,7 @@ func main() {
 			f := parseFilters(r)
 			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(context.Background(), pool) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(r.Context(), pool) })
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -178,6 +180,9 @@ func main() {
 			t, _ := qrm.LoadTrust(ctx, pool)
 			return t
 		}, "trust_patch"))
+		pr.Get("/stream/queue", sseStream(func() any { return map[string]any{"type": "upsert", "incident": map[string]any{"id": 0}} }, "queue_patch"))
+		pr.Get("/stream/command-center", sseStream(func() any { return map[string]any{"openIncidents": 0} }, "command_center_patch"))
+		pr.Get("/stream/trust", sseStream(func() any { return map[string]any{"state": "stable"} }, "trust_patch"))
 	})
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: r, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
@@ -195,6 +200,7 @@ func main() {
 }
 
 func sseStream(payload func(context.Context) any, event string) http.HandlerFunc {
+func sseStream(payload func() any, event string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -212,6 +218,7 @@ func sseStream(payload func(context.Context) any, event string) http.HandlerFunc
 				return
 			case <-tk.C:
 				b, _ := json.Marshal(payload(r.Context()))
+				b, _ := json.Marshal(payload())
 				_, _ = w.Write([]byte(": heartbeat\n"))
 				_, _ = w.Write([]byte("event: " + event + "\n"))
 				_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))

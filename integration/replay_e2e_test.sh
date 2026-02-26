@@ -14,3 +14,4 @@ status=$(echo "$resp" | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)"
 sleep 1
 curl -fsS "$QUERY_URL/replay/$id" ${COOKIE:+-H "Cookie: $COOKIE"} | grep -Eq '"status"'
 echo "PASS replay_e2e $id"
+echo 'replay_e2e placeholder: verify /replay/start returns queued then /replay/{id} transitions'

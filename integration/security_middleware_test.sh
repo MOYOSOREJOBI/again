@@ -13,3 +13,4 @@ for i in 1 2 3 4 5 6; do
   curl -s -o /dev/null -X POST "$GW_URL/auth/login" -H 'Content-Type: application/json' -d '{"Email":"x","Password":"y"}' || true
 done
 echo "PASS security_middleware"
+echo 'security_middleware placeholder: verify csrf 403 and rate-limit 429'

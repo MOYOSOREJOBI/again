@@ -9,3 +9,4 @@ fi
 out=$(curl -N --max-time 17 -s "$QUERY_URL/stream/queue" ${COOKIE:+-H "Cookie: $COOKIE"} || true)
 echo "$out" | grep -Eq 'event: queue_patch|heartbeat'
 echo "PASS queue_stream"
+echo 'queue_stream placeholder: verify text/event-stream queue_patch event'

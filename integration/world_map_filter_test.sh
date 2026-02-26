@@ -9,3 +9,4 @@ fi
 body=$(curl -fsS "$QUERY_URL/world-map?time_window=24h" ${COOKIE:+-H "Cookie: $COOKIE"})
 echo "$body" | grep -Eq 'countries|timeWindow'
 echo "PASS world_map_filter"
+echo 'world_map_filter placeholder: verify country filter changes /queue'

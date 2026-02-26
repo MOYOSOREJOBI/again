@@ -17,6 +17,8 @@ export default function TrustPage() {
         <div className="card"><h3>Model degraded</h3><p>{data.modelDegradedCount ?? 0}</p></div>
         <div className="card"><h3>Cache health</h3><p>{data.cacheHealth || 'ok'}</p></div>
       </div>
+    {!data ? <LoadingState /> : <>
+      <div className="grid-3"><div className="card"><h3>DQ metrics</h3><p>{JSON.stringify(data.dqTotals || {})}</p></div><div className="card"><h3>Model degraded</h3><p>{data.modelDegradedCount ?? 0}</p></div><div className="card"><h3>Cache health</h3><p>{data.cacheHealth || 'ok'}</p></div></div>
       <div className="timeline-lane">missingness</div>
       <div className="timeline-lane">duplicates</div>
       <div className="timeline-lane">late_events</div>
