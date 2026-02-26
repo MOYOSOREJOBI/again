@@ -112,7 +112,39 @@ func main() {
 			f := parseFilters(r)
 			key := cache.ExecutiveKey(f.Region, f.Industry, f.TimeWindow)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlExecutive, func() (map[string]any, error) {
-				return map[string]any{"topRisks": []any{}, "countryConcentration": []any{}, "industryConcentration": []any{}, "trustSummary": map[string]any{"state": "stable"}, "riskMemo": "No material change."}, nil
+				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				if err != nil {
+					return nil, err
+				}
+				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, f.TimeWindow)
+				if err != nil {
+					return nil, err
+				}
+				trust, _ := qrm.LoadTrust(r.Context(), pool)
+				top := make([]map[string]any, 0, 5)
+				for i, row := range topRisks {
+					if i >= 5 {
+						break
+					}
+					top = append(top, map[string]any{"id": row.ID, "symbol": row.Symbol, "priorityScore": row.PriorityScore, "compositeRisk": row.CompositeRisk, "severityBand": row.SeverityBand})
+				}
+				industryConcentration := []map[string]any{}
+				ir, err := pool.Query(r.Context(), `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+windowSQLForExecutive(f.TimeWindow)+` GROUP BY 1 ORDER BY 2 DESC LIMIT 8`)
+				if err == nil {
+					defer ir.Close()
+					for ir.Next() {
+						var industry string
+						var count int
+						if ir.Scan(&industry, &count) == nil {
+							industryConcentration = append(industryConcentration, map[string]any{"industry": industry, "incidentCount": count})
+						}
+					}
+				}
+				riskMemo := "No material change."
+				if len(top) > 0 {
+					riskMemo = "Top risk concentration is increasing in the leading instruments for the selected time window."
+				}
+				return map[string]any{"topRisks": top, "countryConcentration": countryConcentration, "industryConcentration": industryConcentration, "trustSummary": trust["trustSummary"], "riskMemo": riskMemo}, nil
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -300,5 +332,16 @@ func requireRole(pub *rsa.PublicKey, perm string) func(http.Handler) http.Handle
 			}
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+func windowSQLForExecutive(tw string) string {
+	switch tw {
+	case "1h":
+		return "i.last_activity_at > now()-interval '1 hour'"
+	case "7d":
+		return "i.last_activity_at > now()-interval '7 days'"
+	default:
+		return "i.last_activity_at > now()-interval '24 hours'"
 	}
 }

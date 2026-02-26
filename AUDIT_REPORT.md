@@ -1,11 +1,14 @@
-# Sentinel Audit Snapshot
+# Sentinel Audit Snapshot (Updated)
 
-This repository currently contains severe merge-corruption and compile-time failures across core backend, replay, and frontend modules.
+This audit run verified that Sentinel currently builds and passes unit tests, but still contains major product-truth gaps versus a production-grade market-surveillance platform.
 
-Key blockers observed:
-- Go build/tests fail due syntax corruption in `internal/replay/*` and duplicate/unfinished code in query modules.
-- Frontend TypeScript build/tests fail due broken JSX/duplicate fragments in trust/map pages.
-- Python tests partially pass but `readyz` tests fail due interface drift (`model_loaded` removed).
-- Replay implementation writes placeholder recomputed scores (`0.0`, `stable`) rather than full pipeline parity.
+Highlights:
+- Core Go/Python/Web unit suites pass.
+- End-to-end pipeline skeleton exists (simulator -> aggregator -> features -> inference -> alerts/query).
+- Replay is metadata/job-real but computationally simplified (placeholder scoring during replay).
+- Executive and governance surfaces are partially placeholder.
+- World map is a hand-drawn SVG with a small fixed country set, not a real geographic map.
+- Internationalization is effectively absent beyond `lang="en"`.
+- Security posture is improved (JWT + CSRF + CORS + rate limiting), but still in-memory and not production-hard.
 
-See terminal evidence in this audit run for command outputs and failing suites.
+See terminal audit output and code citations in the assistant final report for evidence.
