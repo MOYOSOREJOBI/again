@@ -29,6 +29,3 @@ type Result struct {
 	FeatureCount int `json:"feature_count"`
 	ScoreCount   int `json:"score_count"`
 }
-	ModelVersion      string
-	FeatureSetVersion string
-}
