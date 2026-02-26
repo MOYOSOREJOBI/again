@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/segmentio/ksuid"
 	"sentinel/internal/audit"
 	"sentinel/internal/auth"
 	"sentinel/internal/config"
@@ -83,8 +82,27 @@ func main() {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		id := ksuid.New().String()
-		if _, err := pool.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary) VALUES($1,'demo','completed',$2)`, id, `{"delta":0}`); err != nil {
+		var req struct {
+			Start             time.Time `json:"start"`
+			End               time.Time `json:"end"`
+			ModelVersion      string    `json:"model_version"`
+			FeatureSetVersion string    `json:"feature_set_version"`
+		}
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+		if req.Start.IsZero() {
+			req.Start = time.Now().UTC().Add(-1 * time.Hour)
+		}
+		if req.End.IsZero() {
+			req.End = time.Now().UTC()
+		}
+		if req.ModelVersion == "" {
+			req.ModelVersion = "baseline-v1"
+		}
+		if req.FeatureSetVersion == "" {
+			req.FeatureSetVersion = "v2"
+		}
+		var id string
+		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,'recompute','wm_v1',5000,$4,$5) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
 			logger.Error("start replay failed", map[string]any{"error": err.Error()})
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
