@@ -22,6 +22,8 @@ Sentinel is a streaming risk-operations workspace (ticks -> features -> scores -
 
 ```bash
 make browser-validate
+# strict gate mode (fail if browser tooling unavailable)
+REQUIRE_BROWSER=1 make browser-validate
 ```
 
 What it checks:
@@ -32,10 +34,17 @@ What it checks:
 Artifacts:
 - `docs/screenshots/browser-validation.json`
 
+Exit semantics:
+- `PASS` -> exit 0
+- `SKIP` -> exit 3 (or exit 1 in strict gate mode when `REQUIRE_BROWSER=1`)
+- `FAIL` -> exit 1
+
 ## Screenshot generation
 
 ```bash
 make screenshot-smoke
+# strict gate mode (fail if browser tooling unavailable)
+REQUIRE_BROWSER=1 make screenshot-smoke
 ```
 
 Behavior:
@@ -65,14 +74,16 @@ Routes captured:
 
 ```bash
 make release-gate
+# equivalent strict browser checks:
+# REQUIRE_BROWSER=1 make browser-validate && REQUIRE_BROWSER=1 make screenshot-smoke && make verify-screenshots
 ```
 
 Gate includes:
 - Go tests + inference tests + web tests (`make unit`)
 - Replay/security/demo smoke checks
-- Browser validation
-- Screenshot generation
-- Manifest existence check
+- Strict browser validation
+- Strict screenshot generation
+- Manifest contract validation (`make verify-screenshots`)
 
 ## Environment notes
 - Browser artifact generation requires a runnable local stack.

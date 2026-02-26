@@ -51,6 +51,24 @@ done
 rm -f "$COOKIE_JAR"
 
 echo "[pass] Sentinel stack ready ($mode)"
-./scripts/browser-validate.sh || { echo "[fail] browser validation"; exit 1; }
-./scripts/capture-screenshots.sh || { echo "[fail] screenshot capture"; exit 1; }
-echo "PASS: Sentinel Demo Ready ($mode)"
+SKIPPED=0
+./scripts/browser-validate.sh || rc=$?
+if [ "${rc:-0}" -eq 3 ]; then
+  echo "[skip] browser validation skipped"
+  SKIPPED=1
+elif [ "${rc:-0}" -ne 0 ]; then
+  echo "[fail] browser validation"; exit 1
+fi
+unset rc
+./scripts/capture-screenshots.sh || rc=$?
+if [ "${rc:-0}" -eq 3 ]; then
+  echo "[skip] screenshot capture skipped"
+  SKIPPED=1
+elif [ "${rc:-0}" -ne 0 ]; then
+  echo "[fail] screenshot capture"; exit 1
+fi
+if [ "$SKIPPED" -eq 1 ]; then
+  echo "SKIP: Sentinel Demo Ready with skipped browser artifact steps ($mode)"
+else
+  echo "PASS: Sentinel Demo Ready ($mode)"
+fi

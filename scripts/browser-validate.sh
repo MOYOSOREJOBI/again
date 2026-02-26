@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+STRICT=${REQUIRE_BROWSER:-0}
 if ! command -v node >/dev/null 2>&1; then
   echo "SKIP: node unavailable"
-  exit 0
+  [ "$STRICT" = "1" ] && exit 1 || exit 3
 fi
 if node -e "require('playwright')" >/dev/null 2>&1; then
   node scripts/browser-validate.mjs
@@ -13,4 +14,4 @@ if command -v docker >/dev/null 2>&1; then
   exit $?
 fi
 echo "SKIP: playwright missing locally and docker unavailable"
-exit 0
+[ "$STRICT" = "1" ] && exit 1 || exit 3
