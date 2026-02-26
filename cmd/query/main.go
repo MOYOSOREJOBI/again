@@ -81,7 +81,9 @@ func main() {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
 			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadCommandCenter(r.Context(), pool, f.TimeWindow) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
+				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+			})
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -91,7 +93,9 @@ func main() {
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
-			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) { return qrm.LoadTrust(r.Context(), pool) })
+			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
+				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+			})
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
@@ -120,7 +124,7 @@ func main() {
 				if err != nil {
 					return nil, err
 				}
-				trust, _ := qrm.LoadTrust(r.Context(), pool)
+				trust, _ := qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
 				top := make([]map[string]any, 0, 5)
 				for i, row := range topRisks {
 					if i >= 5 {
@@ -247,11 +251,11 @@ func main() {
 			return map[string]any{"type": "upsert", "incident": inc}
 		}, "queue_patch"))
 		pr.Get("/stream/command-center", sseStream(func(ctx context.Context) any {
-			cc, _ := qrm.LoadCommandCenter(ctx, pool, "24h")
+			cc, _ := qrm.LoadCommandCenter(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
 			return cc
 		}, "command_center_patch"))
 		pr.Get("/stream/trust", sseStream(func(ctx context.Context) any {
-			t, _ := qrm.LoadTrust(ctx, pool)
+			t, _ := qrm.LoadTrust(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
 			return t
 		}, "trust_patch"))
 	})
