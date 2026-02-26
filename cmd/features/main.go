@@ -28,10 +28,11 @@ type symbolState struct {
 	LastPrice float64
 	LastEvent time.Time
 
-	Ret60  *marketmath.Ring
-	Ret300 *marketmath.Ring
-	Vol60  *marketmath.Ring
-	Log300 *marketmath.Ring
+	Ret60     *marketmath.Ring
+	Ret300    *marketmath.Ring
+	Vol60     *marketmath.Ring
+	Log300    *marketmath.Ring
+	PriceHist *marketmath.Ring
 
 	EWMA60  *marketmath.EWMA
 	EWMA300 *marketmath.EWMA
@@ -54,6 +55,7 @@ func newSymbolState() *symbolState {
 		EWMA60:        marketmath.NewEWMA(0.94),
 		EWMA300:       marketmath.NewEWMA(0.97),
 		RecentAnomaly: marketmath.NewRing(300),
+		PriceHist:     marketmath.NewRing(301),
 	}
 }
 
@@ -172,13 +174,13 @@ func computeFeatures(st *symbolState, price, vol float64, eventAt time.Time) (ma
 		}
 	}
 
-	ret := 0.0
-	logRet := 0.0
+	ret := horizonReturn(st.PriceHist, price, 1)
+	ret1m := horizonReturn(st.PriceHist, price, 60)
+	ret5m := horizonReturn(st.PriceHist, price, 300)
+	logRet := horizonLogReturn(st.PriceHist, price, 1)
+	logRet1m := horizonLogReturn(st.PriceHist, price, 60)
+	logRet5m := horizonLogReturn(st.PriceHist, price, 300)
 	tickGap := 0.0
-	if st.LastPrice > 0 {
-		ret = (price / st.LastPrice) - 1
-		logRet = math.Log(math.Max(price, eps) / math.Max(st.LastPrice, eps))
-	}
 	if !st.LastEvent.IsZero() {
 		tickGap = math.Max(0, eventAt.Sub(st.LastEvent).Seconds())
 	}
@@ -213,17 +215,18 @@ func computeFeatures(st *symbolState, price, vol float64, eventAt time.Time) (ma
 	dq := marketmath.DQPenalty(staleness, lateRatio, ooRatio, dupRatio, missRatio)
 
 	st.LastPrice = price
+	st.PriceHist.Push(price)
 	if eventAt.After(st.LastEvent) {
 		st.LastEvent = eventAt
 	}
 
 	payload := map[string]float64{
 		"ret_1s":              ret,
-		"ret_1m":              ret,
-		"ret_5m":              ret,
+		"ret_1m":              ret1m,
+		"ret_5m":              ret5m,
 		"log_ret_1s":          logRet,
-		"log_ret_1m":          logRet,
-		"log_ret_5m":          logRet,
+		"log_ret_1m":          logRet1m,
+		"log_ret_5m":          logRet5m,
 		"mean_ret_60":         meanRet60,
 		"std_ret_60":          stdRet60,
 		"z_ret_60":            z60,
@@ -257,4 +260,26 @@ func ratio(a, b float64) float64 {
 		return 0
 	}
 	return a / b
+}
+
+func horizonReturn(hist *marketmath.Ring, current float64, lag int) float64 {
+	if hist == nil || lag < 1 {
+		return 0
+	}
+	base, ok := hist.AtLag(lag - 1)
+	if !ok || base <= 0 {
+		return 0
+	}
+	return (current / base) - 1
+}
+
+func horizonLogReturn(hist *marketmath.Ring, current float64, lag int) float64 {
+	if hist == nil || lag < 1 {
+		return 0
+	}
+	base, ok := hist.AtLag(lag - 1)
+	if !ok || base <= 0 {
+		return 0
+	}
+	return math.Log(math.Max(current, eps) / math.Max(base, eps))
 }

@@ -25,3 +25,9 @@
 3. Update cache key helpers to include all filter dimensions.
 4. Update frontend filter type contract to match backend.
 5. Add test for full query filter parsing.
+
+## Additional validation + wiring fixes (this pass)
+- Verified full unit stack (`make unit`) and found concrete TypeScript contract drift in UI filter wiring (`time_window`/`country` stale fields).
+- Fixed UI to use canonical filter keys (`window`, `countryCode`) across Command Center, Queue, Trust, and global AppShell filter strip.
+- Re-ran Go/Python/Web unit suites after fixes; all pass.
+- Ran integration checks in this environment; scripts correctly reported SKIP when Docker/services were unavailable.

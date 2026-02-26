@@ -23,8 +23,5 @@ func (e *EWMA) Update(ret float64) {
 }
 
 func (e *EWMA) Vol() float64 {
-	if e.Var <= 0 {
-		return 0
-	}
-	return math.Sqrt(e.Var)
+	return math.Sqrt(math.Max(e.Var, 1e-12))
 }
