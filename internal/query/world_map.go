@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,9 +28,22 @@ func mapWindowSQL(tw string) string {
 	}
 }
 
-func LoadWorldMap(ctx context.Context, db *pgxpool.Pool, timeWindow string) ([]CountryAgg, error) {
-	q := `SELECT coalesce(m.country_code,'XX'),coalesce(m.country_name,'Unknown'),count(i.id),coalesce(avg(i.composite_risk),0),coalesce(max(i.severity_band),'Stable'),coalesce(max(i.trust_state),'healthy'),coalesce(max(m.industry),'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + mapWindowSQL(timeWindow) + ` GROUP BY 1,2 ORDER BY 3 DESC LIMIT 120`
-	rows, err := db.Query(ctx, q)
+func LoadWorldMap(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]CountryAgg, error) {
+	args := []any{}
+	where := mapWindowSQL(f.TimeWindow)
+	add := func(col, val string) {
+		if val == "" {
+			return
+		}
+		args = append(args, val)
+		where += fmt.Sprintf(" AND %s=$%d", col, len(args))
+	}
+	add("m.region", f.Region)
+	add("m.country_code", f.Country)
+	add("m.industry", f.Industry)
+
+	q := `SELECT coalesce(m.country_code,'XX'),coalesce(m.country_name,'Unknown'),count(i.id),coalesce(avg(i.composite_risk),0),coalesce(max(i.severity_band),'Stable'),coalesce(max(i.trust_state),'healthy'),coalesce(max(m.industry),'') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + where + ` GROUP BY 1,2 ORDER BY 3 DESC LIMIT 120`
+	rows, err := db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

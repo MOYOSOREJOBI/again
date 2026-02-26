@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -30,7 +31,7 @@ func Run(ctx context.Context, db *pgxpool.Pool, jobID string) error {
 		_ = markReplayJobFailed(ctx, db, jobID, err.Error())
 		return err
 	}
-	if err := persistReplayResult(ctx, db, jobID, result); err != nil {
+	if err := persistReplayResult(ctx, db, job, result); err != nil {
 		_ = markReplayJobFailed(ctx, db, jobID, err.Error())
 		return err
 	}
@@ -51,6 +52,7 @@ func recomputePipeline(ctx context.Context, db *pgxpool.Pool, job Job, ticks []T
 		return Result{}, nil
 	}
 	feat, score, candle := 0, 0, 0
+	lastPrice := map[string]float64{}
 	for _, t := range ticks {
 		payload := map[string]any{"symbol": t.Symbol, "price": t.Price, "volume": t.Volume, "event_time": t.EventTime, "replay_job_id": job.ID}
 		b, _ := json.Marshal(payload)
@@ -59,14 +61,58 @@ func recomputePipeline(ctx context.Context, db *pgxpool.Pool, job Job, ticks []T
 		candle++
 		_, _ = db.Exec(ctx, `INSERT INTO features(idempotency_key,symbol,ts,feature_hash,payload,replay_run_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:feature:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, job.ID, b, job.ID)
 		feat++
-		_, _ = db.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,replay_run_id,model_version,feature_set_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:score:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, 0.0, "stable", "recomputed", job.ID, job.ModelVersion, job.FeatureSetVersion)
+
+		s, sev := replayScoreAndSeverity(lastPrice[t.Symbol], t.Price)
+		explanation := fmt.Sprintf("recomputed_return=%.6f", s)
+		_, _ = db.Exec(ctx, `INSERT INTO scores(idempotency_key,symbol,ts,score,severity,explanation,replay_run_id,model_version,feature_set_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`, fmt.Sprintf("replay:score:%s:%s", job.ID, t.EventID), t.Symbol, t.EventTime, s, sev, explanation, job.ID, job.ModelVersion, job.FeatureSetVersion)
+		lastPrice[t.Symbol] = t.Price
 		score++
 	}
 	return Result{TickCount: len(ticks), CandleCount: candle, FeatureCount: feat, ScoreCount: score}, nil
 }
 
-func persistReplayResult(ctx context.Context, db *pgxpool.Pool, jobID string, result Result) error {
-	b, _ := json.Marshal(result)
-	_, err := db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, jobID, b)
+func replayScoreAndSeverity(prevPrice, price float64) (float64, string) {
+	if prevPrice <= 0 || price <= 0 {
+		return 0, "stable"
+	}
+	ret := math.Abs((price / prevPrice) - 1)
+	score := math.Max(0, math.Min(1, ret*25.0))
+	switch {
+	case score >= 0.85:
+		return score, "critical"
+	case score >= 0.65:
+		return score, "high"
+	case score >= 0.40:
+		return score, "elevated"
+	default:
+		return score, "stable"
+	}
+}
+
+func persistReplayResult(ctx context.Context, db *pgxpool.Pool, job Job, result Result) error {
+	diff, err := buildReplayDiffSummary(ctx, db, job, result)
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(diff)
+	_, err = db.Exec(ctx, `INSERT INTO replay_runs(id,incident_id,status,diff_summary,completed_at) VALUES($1,'recompute','completed',$2,now()) ON CONFLICT (id) DO UPDATE SET status='completed',diff_summary=$2,completed_at=now()`, job.ID, b)
 	return err
+}
+
+func buildReplayDiffSummary(ctx context.Context, db *pgxpool.Pool, job Job, result Result) (DiffSummary, error) {
+	as := ScoreStats{}
+	rec := ScoreStats{}
+	if err := db.QueryRow(ctx, `SELECT count(*),coalesce(avg(score),0),count(*) FILTER (WHERE severity in ('high','critical')) FROM scores WHERE ts BETWEEN $1 AND $2 AND coalesce(replay_run_id,'')=''`, job.TimeWindowStart, job.TimeWindowEnd).Scan(&as.Count, &as.AvgScore, &as.HighOrHigher); err != nil {
+		return DiffSummary{}, err
+	}
+	if err := db.QueryRow(ctx, `SELECT count(*),coalesce(avg(score),0),count(*) FILTER (WHERE severity in ('high','critical')) FROM scores WHERE replay_run_id=$1`, job.ID).Scan(&rec.Count, &rec.AvgScore, &rec.HighOrHigher); err != nil {
+		return DiffSummary{}, err
+	}
+	return DiffSummary{
+		Result:         result,
+		AsScored:       as,
+		Recomputed:     rec,
+		AvgScoreDelta:  rec.AvgScore - as.AvgScore,
+		HighCountDelta: rec.HighOrHigher - as.HighOrHigher,
+	}, nil
 }
