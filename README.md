@@ -1,74 +1,84 @@
 # Sentinel
 
-Sentinel is a streaming market-risk workspace: ticks -> candles -> features -> scores -> alerts -> incidents -> cases.
+Sentinel is a streaming risk-operations workspace (ticks -> features -> scores -> incidents -> cases) with deterministic fallback scoring and explicit trust labeling.
 
-## What changed in this pass
-- Added a first-class **Case Workspace** (`/case`) and deeper case timeline/actions in `/case/[id]`.
-- Added query-side case APIs (`/cases`, `/case/{id}`) and replay timeline enrichment (`/replay/{job}` now includes deterministic timeline entries).
-- Tightened Docker/demo readiness and smoke behavior (`scripts/run-demo.sh`) with explicit wait + PASS/SKIP/FAIL semantics.
-- Added screenshot capture helper (`scripts/capture-screenshots.sh`) for Command Center, Queue, Incident, Trust, Replay, Governance, and About.
-- Productized Governance/Executive/About/Glossary pages with clearer role behavior and honest scope copy.
+## Implemented now (final closure state)
 
-## What is currently implemented
-- Go microservice pipeline with Kafka/Redpanda, Postgres/Timescale, Redis, Prometheus/Grafana.
-- Auth via gateway cookies + JWT claims, RBAC roles (`viewer`, `analyst`, `admin`), append-only audit chain.
-- Incident-first alerting and investigation workflow (incidents + cases).
-- Deterministic fallback scoring in inference with explicit model-degraded markers.
-- Route-based Next.js operator pages (`/command-center`, `/queue`, `/incident/[id]`, `/case`, `/case/[id]`, `/trust`, `/governance`, `/executive`, `/replay/[job]`, `/about`, `/glossary`).
-- World-map surface powered by real `/world-map` aggregates.
+### Fully real in this repo
+- Auth + JWT cookie flow with seeded users (`admin`, `analyst`, `viewer`) and `/me` role checks.
+- Query/alerts APIs backing command center, queue, incident detail, trust, replay, world map, governance, executive, and case routes.
+- Incident -> case promotion, case detail timeline, notes/evidence/disposition mutation paths.
+- Deterministic fallback scoring with explicit fallback honesty metadata.
 
-## Model stack reality (v1)
-- Hot path today is deterministic fallback scoring (artifact-aware).
-- Output includes anomaly, escalation probability, composite risk, priority score, recommended action, rank reason, explanation payload, and lineage fields.
-- If model artifacts are missing, outputs explicitly mark fallback/degraded mode.
+### Deterministic and useful (intentionally simplified)
+- Replay is deterministic, metadata-derived reconstruction from persisted incident records.
+- Governance/executive surfaces are aggregate-first summaries from seeded/demo data.
 
-## Replay reality (v1.1)
-- Replay remains metadata-first, but now includes a deterministic derived timeline lane from stored records.
-- UI labels replay limitations explicitly; no fake full historical tick-perfect recompute is claimed.
+### Honest simplifications preserved
+- No claim of full tick-perfect historical replay reconstruction.
+- Governance is summary/reporting, not destructive governance-control execution.
 
-## Roles
-- Viewer: read-only analytical and case surfaces.
-- Analyst: triage incidents and mutate case workflow.
-- Admin: analyst actions + governance surfaces.
+## Browser validation
 
-## Run locally
 ```bash
-make doctor
-make dev-keys
-make demo
+make browser-validate
 ```
+
+What it checks:
+- World-map region click/filter propagation into downstream fetches.
+- Incident -> case promotion and resulting case-detail usability.
+- Role gating (viewer read-only behavior) and backend `403` enforcement for forbidden promote/mutate calls.
+
+Artifacts:
+- `docs/screenshots/browser-validation.json`
 
 ## Screenshot generation
+
 ```bash
-# Requires running web app at localhost:3000
-./scripts/capture-screenshots.sh
-# outputs docs/screenshots/*.png
+make screenshot-smoke
 ```
 
-## Browser validation flow
-1. `make demo`
-2. Sign in as seeded admin (`admin@sentinel.local` / `Sentinel#123`)
-3. Validate pages: command-center, queue, incident, case, trust, replay, governance, executive, about.
-4. Validate world map click -> region filter reflected in queue/command center.
+Behavior:
+- Captures after login using seeded admin credentials.
+- Resolves dynamic IDs (incident/case/replay) before route capture.
+- Emits PASS/SKIP/FAIL entries and writes `docs/screenshots/manifest.json`.
+- Stores screenshots in `docs/screenshots/*.png`.
 
-## Demo flow
-1. Command Center global posture.
-2. Queue ranked triage list.
-3. Incident detail explanation and case promotion.
-4. Case Workspace (notes/evidence/status/disposition).
-5. Replay deterministic timeline lane.
-6. Governance + Executive + About/Glossary trust narrative.
+Routes captured:
+- `/command-center`, `/queue`, `/incident/[id]`, `/case`, `/case/[id]`, `/trust`, `/replay/[job]`, `/governance`, `/executive`, `/about`, `/glossary`.
 
-## Test from repo root
+## Local demo flow (reviewer runbook)
+
+1. `make dev-keys`
+2. `make demo`
+3. Sign in (`admin@sentinel.local` / `Sentinel#123`)
+4. Open Command Center (`/command-center`)
+5. Inspect Queue (`/queue`)
+6. Open an Incident (`/incident/[id]`)
+7. Promote to Case
+8. Open Case Workspace (`/case`, `/case/[id]`)
+9. Open Replay (`/replay/demo`)
+10. Open Governance + Executive (`/governance`, `/executive`)
+11. Review screenshot/browser artifacts under `docs/screenshots/`
+
+## Release validation gate
+
 ```bash
-make unit
-make replay-test
-make security-test   # may SKIP without Docker
-make demo-smoke      # may SKIP without Docker
-make verify
+make release-gate
 ```
 
-## Current limitations
-- Docker-dependent integration checks will SKIP in environments without Docker.
-- Replay is still not full tick-perfect recompute.
-- Deterministic fallback scoring remains the default path in this build.
+Gate includes:
+- Go tests + inference tests + web tests (`make unit`)
+- Replay/security/demo smoke checks
+- Browser validation
+- Screenshot generation
+- Manifest existence check
+
+## Environment notes
+- Browser artifact generation requires a runnable local stack.
+- If local Playwright is unavailable, scripts attempt Docker Playwright runner.
+- Docker-gated checks may SKIP only when Docker is genuinely unavailable.
+
+## Remaining intentional limitations
+- Replay remains deterministic derived / metadata-first, not full tick-perfect recompute.
+- Fallback scoring remains primary path when model artifacts are unavailable.

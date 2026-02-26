@@ -50,4 +50,7 @@ for ep in command-center queue trust world-map replay/demo governance/summary ex
 done
 rm -f "$COOKIE_JAR"
 
+echo "[pass] Sentinel stack ready ($mode)"
+./scripts/browser-validate.sh || { echo "[fail] browser validation"; exit 1; }
+./scripts/capture-screenshots.sh || { echo "[fail] screenshot capture"; exit 1; }
 echo "PASS: Sentinel Demo Ready ($mode)"
