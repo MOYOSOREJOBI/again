@@ -78,7 +78,7 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "model.deploy", modelName+":"+version); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
-		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+		cache.InvalidateByPrefixes(ctx, cache.ReadModelPrefixes()...)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -118,7 +118,7 @@ func main() {
 		}
 		go func(id string) {
 			_ = replay.Run(context.Background(), pool, id)
-			cache.InvalidateByPrefixes(context.Background(), "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+			cache.InvalidateByPrefixes(context.Background(), cache.ReadModelPrefixes()...)
 		}(id)
 		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued"})
 	})
