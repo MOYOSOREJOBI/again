@@ -2,17 +2,31 @@ package query
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string) (map[string]any, error) {
+func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, f QueueFilters) (map[string]any, error) {
+	args := []any{}
+	where := windowSQL(f.TimeWindow)
+	add := func(col, val string) {
+		if val == "" {
+			return
+		}
+		args = append(args, val)
+		where += fmt.Sprintf(" AND %s=$%d", col, len(args))
+	}
+	add("m.region", f.Region)
+	add("m.country_code", f.Country)
+	add("m.industry", f.Industry)
+
 	var open, high int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE status in ('open','ack')`).Scan(&open)
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM incidents WHERE severity_band in ('high','critical') AND status in ('open','ack')`).Scan(&high)
+	_ = db.QueryRow(ctx, `SELECT count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE i.status in ('open','ack') AND `+where, args...).Scan(&open)
+	_ = db.QueryRow(ctx, `SELECT count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE i.status in ('open','ack') AND i.severity_band in ('high','critical') AND `+where, args...).Scan(&high)
 
 	topIncidents := []map[string]any{}
-	rows, err := db.Query(ctx, `SELECT id,primary_symbol,coalesce(priority_score,0),coalesce(composite_risk,0),severity_band FROM incidents WHERE status in ('open','ack') ORDER BY priority_score DESC LIMIT 5`)
+	rows, err := db.Query(ctx, `SELECT i.id,i.primary_symbol,coalesce(i.priority_score,0),coalesce(i.composite_risk,0),i.severity_band FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE i.status in ('open','ack') AND `+where+` ORDER BY i.priority_score DESC LIMIT 5`, args...)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -26,7 +40,7 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 	}
 
 	countries := []map[string]any{}
-	cr, err := db.Query(ctx, `SELECT coalesce(m.country_code,'XX'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1 ORDER BY 2 DESC LIMIT 5`)
+	cr, err := db.Query(ctx, `SELECT coalesce(m.country_code,'XX'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+where+` GROUP BY 1 ORDER BY 2 DESC LIMIT 5`, args...)
 	if err == nil {
 		defer cr.Close()
 		for cr.Next() {
@@ -39,7 +53,7 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 	}
 
 	industries := []map[string]any{}
-	ir, err := db.Query(ctx, `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol GROUP BY 1 ORDER BY 2 DESC LIMIT 5`)
+	ir, err := db.Query(ctx, `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+where+` GROUP BY 1 ORDER BY 2 DESC LIMIT 5`, args...)
 	if err == nil {
 		defer ir.Close()
 		for ir.Next() {
@@ -51,5 +65,5 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, timeWindow string)
 		}
 	}
 
-	return map[string]any{"timeWindow": timeWindow, "openIncidents": open, "highRiskCount": high, "backlogDelta": high - open, "topIncidents": topIncidents, "topCountries": countries, "topIndustries": industries, "trust": map[string]any{"state": "stable"}}, nil
+	return map[string]any{"timeWindow": f.TimeWindow, "openIncidents": open, "highRiskCount": high, "backlogDelta": high - open, "topIncidents": topIncidents, "topCountries": countries, "topIndustries": industries, "trust": map[string]any{"state": "stable"}}, nil
 }
