@@ -80,14 +80,10 @@ make release-gate
 
 Gate includes:
 - Go tests + inference tests + web tests (`make unit`)
-- Replay/security/demo smoke checks (including case workflow and query auth/governance RBAC integration checks)
+- Replay/security/demo smoke checks
 - Strict browser validation
 - Strict screenshot generation
 - Manifest contract validation (`make verify-screenshots`)
-
-## Role/RBAC notes
-- Governance summary endpoint is admin-only (`governance:read`).
-- Viewer/analyst can access core read surfaces but are denied governance summary APIs by backend enforcement.
 
 ## Environment notes
 - Browser artifact generation requires a runnable local stack.

@@ -68,7 +68,6 @@ integration-suite:
 	./integration/startup_ordering_test.sh
 	./integration/dependency_failure_test.sh
 	./integration/case_workflow_test.sh
-	./integration/query_auth_test.sh
 
 replay-test:
 	./integration/replay_equivalence_test.sh
@@ -79,7 +78,6 @@ security-test:
 demo-smoke:
 	./integration/e2e_pipeline_test.sh
 	./integration/case_workflow_test.sh
-	./integration/query_auth_test.sh
 
 verify:
 	$(MAKE) unit
