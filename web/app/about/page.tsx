@@ -1,3 +1,16 @@
+'use client'
+
+import AppShell, { useGlobalFilters } from '../../components/AppShell'
+
 export default function AboutPage() {
-  return <main style={{ padding: 24 }}><h1>About Sentinel</h1><p>Sentinel is a streaming risk surveillance workspace for viewers, analysts, and admins. It turns event streams into incidents, supports case workflows, and exposes trust/replay/governance state. Current replay is metadata-first and partial; model scoring uses deterministic fallback when artifacts are unavailable.</p></main>
+  const { filters, apply } = useGlobalFilters()
+  return (
+    <AppShell title="About Sentinel" subtitle="What Sentinel does and how trust + replay fit the workflow." filters={filters} setFilters={apply}>
+      <section className="card">
+        <p>Sentinel turns streaming market and telemetry data into ranked incidents, analyst queue actions, and governed cases.</p>
+        <p>Trust signals explain whether data quality reduces confidence and ranking.</p>
+        <p>Replay is currently metadata-first: version, timing, and diff context are reproducible while full lane recompute remains partial.</p>
+      </section>
+    </AppShell>
+  )
 }
