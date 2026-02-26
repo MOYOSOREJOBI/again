@@ -8,6 +8,7 @@ import { api, GlobalFilters, Role } from '../lib/api'
 const NAV_ITEMS = [
   { href: '/command-center', label: 'Command Center' },
   { href: '/queue', label: 'Queue' },
+  { href: '/case', label: 'Cases' },
   { href: '/trust', label: 'Trust' },
   { href: '/executive', label: 'Executive' },
   { href: '/governance', label: 'Governance', minRole: 'admin' as Role },

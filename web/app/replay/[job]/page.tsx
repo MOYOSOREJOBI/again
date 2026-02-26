@@ -1,28 +1,11 @@
 'use client'
-
 import { useEffect, useState } from 'react'
-import { api } from '../../../lib/api'
-import AppShell, { useGlobalFilters } from '../../../components/AppShell'
+import { useParams } from 'next/navigation'
+import AppShell from '../../../components/AppShell'
+import { getReplay } from '../../../lib/api'
 
-export default function ReplayPage({ params }: { params: { job: string } }) {
-  const [job, setJob] = useState<any>(null)
-  const { filters, apply } = useGlobalFilters()
-  useEffect(() => { api.replay(params.job).then(setJob) }, [params.job])
-
-  return (
-    <AppShell title={`Replay ${params.job}`} subtitle="Metadata-first replay workspace" filters={filters} setFilters={apply}>
-      {!job ? <div className="empty-state">Replay metadata unavailable.</div> : <>
-        <div className="grid-3">
-          <div className="card"><h3>Status</h3><p>{job.status}</p></div>
-          <div className="card"><h3>Window</h3><p>{job.started_at || 'not available'} → {job.completed_at || 'running'}</p></div>
-          <div className="card"><h3>Versions</h3><p>Model {job.model_version || 'captured in metadata'}</p></div>
-        </div>
-        <section className="card">
-          <h3>Reproducibility scope</h3>
-          <p>Sentinel currently provides metadata-first replay. You can reproduce configuration, version, and timing context. Full lane recompute is not yet enabled in this build.</p>
-          <pre>{JSON.stringify(job.diff_summary || { note: 'No diff summary available yet.' }, null, 2)}</pre>
-        </section>
-      </>}
-    </AppShell>
-  )
+export default function ReplayPage(){
+  const params=useParams<{job:string}>(); const [job,setJob]=useState<any>(null)
+  useEffect(()=>{ if(params?.job) getReplay(params.job).then(setJob)},[params?.job])
+  return <AppShell title={`Replay ${params?.job||''}`} subtitle="Metadata-first replay workspace">{!job?<div className="empty-state">Replay metadata unavailable.</div>:<><div className="grid-3"><div className="card"><h3>Status</h3><p>{job.status}</p></div><div className="card"><h3>Window</h3><p>{job.time_window}</p></div><div className="card"><h3>Mode</h3><p>{job.mode}</p></div></div><div className="card"><h3>Lane summary</h3><pre>{JSON.stringify(job.lane_series||{},null,2)}</pre><p className="muted">metadata-first mode: full recompute is not yet enabled.</p></div><div className="card"><h3>Deterministic timeline</h3>{(job.timeline_entries||[]).length ? <div>{job.timeline_entries.map((e:any,idx:number)=><div key={idx} className="timeline-lane"><strong>{e.kind}</strong> · {e.symbol} · {e.status} · {e.severity}</div>)}</div> : <div className="empty-state">No timeline entries available for this replay window.</div>}</div></>}</AppShell>
 }

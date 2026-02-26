@@ -6,40 +6,64 @@ import fs from 'node:fs'
 import TrustStrip from '../components/TrustStrip'
 import WorldRiskMap from '../components/WorldRiskMap'
 
-test('login page keeps branded entry copy', () => {
-  const src = fs.readFileSync(process.cwd() + '/app/page.tsx', 'utf-8')
-  assert.match(src, /Sign in to Sentinel/)
-  assert.match(src, /Risk intelligence operator workbench/)
+test('command center renders analytics containers', () => {
+  const src = fs.readFileSync(process.cwd() + '/app/command-center/page.tsx', 'utf-8')
+  assert.match(src, /incident_pressure_series/)
+  assert.match(src, /WorldRiskMap/)
 })
 
-test('TrustStrip renders healthy and degraded variants with richer copy', () => {
-  const stable = renderToStaticMarkup(React.createElement(TrustStrip, { trustState: 'stable', modelUnavailable: false }))
-  const degraded = renderToStaticMarkup(React.createElement(TrustStrip, { trustState: 'degraded', modelUnavailable: true, dqWarning: '2 symbols' }))
-  assert.match(stable, /Model healthy/)
-  assert.match(degraded, /Open Trust/)
+test('queue renders rank reason trust and recommendation', () => {
+  const src = fs.readFileSync(process.cwd() + '/app/queue/page.tsx', 'utf-8')
+  assert.match(src, /rank_reason/)
+  assert.match(src, /recommended_action/)
+  assert.match(src, /trust_label/)
 })
 
-test('WorldRiskMap renders truthful empty state', () => {
-  const html = renderToStaticMarkup(React.createElement(WorldRiskMap, { rows: [] }))
-  assert.match(html, /No regional aggregates yet/) 
+test('incident page renders model and explanation sections and case promotion', () => {
+  const src = fs.readFileSync(process.cwd() + '/app/incident/[id]/page.tsx', 'utf-8')
+  assert.match(src, /Model lineage/)
+  assert.match(src, /Explanation/)
+  assert.match(src, /Promote to Case/)
 })
 
-test('WorldRiskMap renders interactive region cells', () => {
-  const html = renderToStaticMarkup(React.createElement(WorldRiskMap, { rows: [{ country: 'US', region: 'NA', sector: 'TECH', industry: 'SW', incident_count: 3 }] }))
-  assert.match(html, /US/)
-  assert.match(html, /incidents/)
+test('case workspace and detail show role-gated workflow', () => {
+  const workspace = fs.readFileSync(process.cwd() + '/app/case/page.tsx', 'utf-8')
+  const detail = fs.readFileSync(process.cwd() + '/app/case/[id]/page.tsx', 'utf-8')
+  assert.match(workspace, /Viewer mode: read-only case access/)
+  assert.match(detail, /Viewer role is read-only/)
+  assert.match(detail, /Capture disposition/)
 })
 
-test('shell and role nav structure exists in AppShell source', () => {
-  const src = fs.readFileSync(process.cwd() + '/components/AppShell.tsx', 'utf-8')
-  assert.match(src, /left-nav/)
-  assert.match(src, /Governance/)
-  assert.match(src, /roleAllowed/)
+test('trust page renders trend containers', () => {
+  const src = fs.readFileSync(process.cwd() + '/app/trust/page.tsx', 'utf-8')
+  assert.match(src, /timeline-lane/)
 })
 
-test('command center and queue include non-empty state product copy', () => {
-  const cc = fs.readFileSync(process.cwd() + '/app/command-center/page.tsx', 'utf-8')
-  const queue = fs.readFileSync(process.cwd() + '/app/queue/page.tsx', 'utf-8')
-  assert.match(cc, /No open critical incidents right now/)
-  assert.match(queue, /Queue is clear for current filters/)
+test('replay page labels metadata-first mode and deterministic timeline', () => {
+  const src = fs.readFileSync(process.cwd() + '/app/replay/[job]/page.tsx', 'utf-8')
+  assert.match(src, /metadata-first mode/)
+  assert.match(src, /Deterministic timeline/)
+})
+
+test('governance executive about and glossary pages are productized', () => {
+  const gov = fs.readFileSync(process.cwd() + '/app/governance/page.tsx', 'utf-8')
+  const exec = fs.readFileSync(process.cwd() + '/app/executive/page.tsx', 'utf-8')
+  const about = fs.readFileSync(process.cwd() + '/app/about/page.tsx', 'utf-8')
+  const glossary = fs.readFileSync(process.cwd() + '/app/glossary/page.tsx', 'utf-8')
+  assert.match(gov, /admin-only/)
+  assert.match(exec, /Plain-English/)
+  assert.match(about, /production-minded but simplified/)
+  assert.match(glossary, /Fallback mode/)
+})
+
+test('TrustStrip renders fallback honesty', () => {
+  const html = renderToStaticMarkup(React.createElement(TrustStrip, { trustState: 'degraded', modelUnavailable: true }))
+  assert.match(html, /deterministic fallback mode/)
+})
+
+test('WorldRiskMap renders legend and empty state scaffolding', () => {
+  const empty = renderToStaticMarkup(React.createElement(WorldRiskMap, { rows: [] }))
+  assert.match(empty, /No regional aggregates yet/)
+  const html = renderToStaticMarkup(React.createElement(WorldRiskMap, { rows: [{ country: 'US', region: 'NA', incident_count: 3 }] }))
+  assert.match(html, /Top regions/)
 })

@@ -7,12 +7,15 @@ import AppShell, { useGlobalFilters } from '../../../components/AppShell'
 export default function CasePage({ params }: { params: { id: string } }) {
   const [row, setRow] = useState<any>(null)
   const [summary, setSummary] = useState<any>(null)
+  const [me, setMe] = useState<any>({ role: 'viewer' })
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('investigating')
+  const [disposition, setDisposition] = useState('')
   const { filters, apply } = useGlobalFilters()
 
   const load = () => { api.caseDetail(params.id).then(setRow); api.case(params.id).then(setSummary) }
-  useEffect(() => { load() }, [params.id])
+  useEffect(() => { load(); api.me().then(setMe) }, [params.id])
+  const readOnly = me?.role === 'viewer'
 
   return (
     <AppShell title={`Case ${params.id}`} subtitle="Governed investigation surface with evidence, notes, and disposition history." filters={filters} setFilters={apply}>
@@ -31,14 +34,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </section>
           <section className="card">
             <h3>Actions and history</h3>
-            <div className="form-grid">
+            {readOnly ? <div className="empty-state">Viewer role is read-only for case workflow updates.</div> : <div className="form-grid">
               <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="add note" />
               <button onClick={async () => { await api.caseNote(params.id, note).catch(() => null); setNote(''); load() }}>Add note</button>
               <button onClick={async () => { await api.caseEvidence(params.id, 'incident', String(row?.incident_id || summary?.incident_id || ''), { source: 'ui' }).catch(() => null); load() }}>Attach incident evidence</button>
-              <select value={status} onChange={(e) => setStatus(e.target.value)}><option>investigating</option><option>escalated</option><option>closed</option></select>
+              <select value={status} onChange={(e) => setStatus(e.target.value)}><option>open</option><option>investigating</option><option>escalated</option><option>closed</option></select>
               <button onClick={async () => { await api.caseStatus(params.id, status).catch(() => null); load() }}>Update status</button>
-            </div>
-            <div className="empty-state" style={{ marginTop: 10 }}>Disposition history and audit events render from backend audit hooks when populated.</div>
+              <input value={disposition} onChange={(e) => setDisposition(e.target.value)} placeholder="disposition reason" />
+              <button onClick={async () => { await api.caseDisposition(params.id, 'closed', disposition || 'resolved by analyst').catch(() => null); setDisposition(''); load() }}>Capture disposition</button>
+            </div>}
+            {(row?.actions || []).length ? <ul>{row.actions.map((a: any) => <li key={a.id}>{a.created_at}: {a.actor} · {a.action}</li>)}</ul> : <div className="empty-state" style={{ marginTop: 10 }}>No activity timeline entries yet.</div>}
           </section>
         </div>
       </>}

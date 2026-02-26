@@ -81,3 +81,10 @@ button:disabled { opacity: .6; cursor: not-allowed; }
   .sticky-filters, .sticky-top { position: static; }
   .grid-2, .grid-3, .map-grid { grid-template-columns: 1fr; }
 }
+.sparkline { min-height: 44px; border:1px dashed var(--line); border-radius:10px; padding:8px; background:#f8fbff; }
+.metric-bars { display:grid; gap:6px; }
+.severity-chip { border-radius:999px; padding:2px 8px; border:1px solid var(--line); font-size:11px; }
+.queue-row { border-bottom:1px solid #edf2f7; padding:10px 0; display:grid; gap:4px; }
+.map-cell.selected { outline:2px solid var(--blue); }
+.map-legend { border:1px solid var(--line); border-radius:10px; padding:10px; background:#fff; }
+.timeline-lane { border:1px dashed var(--line); border-radius:10px; padding:8px; margin:6px 0; }
