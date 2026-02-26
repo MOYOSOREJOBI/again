@@ -6,6 +6,9 @@ func TestAllowed(t *testing.T) {
 	if !Allowed("admin", "anything") {
 		t.Fatal("admin should be allowed")
 	}
+	if !Allowed("admin", "governance:read") {
+		t.Fatal("admin should read governance")
+	}
 	if !Allowed("analyst", "alerts:write") {
 		t.Fatal("analyst should ack alerts")
 	}
@@ -23,5 +26,17 @@ func TestAllowed(t *testing.T) {
 	}
 	if Allowed("viewer", "replay:write") {
 		t.Fatal("viewer must not trigger replay")
+	}
+}
+
+func TestGovernanceReadRoles(t *testing.T) {
+	if Allowed("viewer", "governance:read") {
+		t.Fatal("viewer must not read governance")
+	}
+	if Allowed("analyst", "governance:read") {
+		t.Fatal("analyst must not read governance")
+	}
+	if !Allowed("admin", "governance:read") {
+		t.Fatal("admin should read governance")
 	}
 }
