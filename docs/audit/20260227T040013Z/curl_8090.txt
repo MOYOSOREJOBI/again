@@ -1,8 +1,0 @@
-### :8090 /
-curl: (7) Failed to connect to localhost port 8090 after 0 ms: Couldn't connect to server
-### :8090 /healthz
-curl: (7) Failed to connect to localhost port 8090 after 0 ms: Couldn't connect to server
-### :8090 /readyz
-curl: (7) Failed to connect to localhost port 8090 after 0 ms: Couldn't connect to server
-### :8090 /metrics
-curl: (7) Failed to connect to localhost port 8090 after 0 ms: Couldn't connect to server

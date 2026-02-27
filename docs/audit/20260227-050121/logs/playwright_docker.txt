@@ -1,3 +1,0 @@
-$ ./scripts/playwright-docker.sh
-=== Playwright Docker runner ===
-Image: mcr.microsoft.com/playwright:v1.53.0-noble

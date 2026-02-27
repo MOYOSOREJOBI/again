@@ -1,3 +1,0 @@
-$ bash -lc cd web && npm test -- --runInBand
-EXIT:0
-\n$ bash -lc cd web && npm test -- --runInBand

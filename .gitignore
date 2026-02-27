@@ -44,3 +44,8 @@ keys/
 node_modules/
 web/.next/
 .DS_Store
+
+docs/audit/**
+docs/progress/**
+!docs/audit/README.md
+!docs/progress/README.md

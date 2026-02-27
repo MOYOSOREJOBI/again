@@ -14,8 +14,6 @@ TS_DIR="${TS_DIR}" ./scripts/gate.sh 2>&1 | tee "${LOG_DIR}/gate.log"
 GATE_EC=${PIPESTATUS[0]}
 set -e
 
-mkdir -p "${PROOF_DIR}" "${LOG_DIR}"
-
 has() {
   [ -f "${PROOF_DIR}/$1" ] && echo 1 || echo 0
 }
@@ -31,22 +29,30 @@ passed=$((s2+s3+s4+s5+s6+s10))
 score=$((passed*100/6))
 status="FAIL"
 runtime="NONE"
+reason="incomplete proofs"
 if [ "${passed}" -eq 6 ]; then
   status="PASS"
   runtime="FULL"
+  reason="all proofs present"
+elif [ -f "${PROOF_DIR}/SKIP_DOCKER.txt" ] || [ "${GATE_EC}" -eq 2 ]; then
+  status="SKIP"
+  runtime="NONE"
+  reason="docker unavailable"
 fi
 
 cat > "${TS_DIR}/RESULT.md" <<MD
 COMPLETION: ${score}%
 STATUS: ${status}
 RUNTIME COVERAGE: ${runtime}
-VERDICT: ${verdict}
+REASON: ${reason}
 
 S2=${s2} S3=${s3} S4=${s4} S5=${s5} S6=${s6} S10=${s10}
 
 GATE_EXIT=${GATE_EC}
 PROOFS=${PROOF_DIR}
 LOGS=${LOG_DIR}
+STATUS_LINE=STATUS=${status}
+REASON_LINE=REASON=${reason}
 MD
 
 cat > "${TS_DIR}/TRACEABILITY.md" <<MD
@@ -62,10 +68,17 @@ cat > "${TS_DIR}/TRACEABILITY.md" <<MD
   - S5_grafana_provisioned.ok
   - S6_data_warm.ok
   - S10_playwright.ok
+- skips:
+  - SKIP_DOCKER.txt indicates runtime not executed due missing Docker
+  - SKIP_PLAYWRIGHT_DOCKER.txt indicates Playwright not executed due missing Docker
 - logs: ${LOG_DIR}
 MD
 
 ln -sfn "${TS}" docs/audit/_latest
 cat "${TS_DIR}/RESULT.md"
+echo "STATUS=${status}"
+echo "REASON=${reason}"
+echo "PROOFS_DIR=${PROOF_DIR}"
+echo "LOGS_DIR=${LOG_DIR}"
 
 [ "${score}" -eq 100 ]

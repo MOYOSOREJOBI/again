@@ -40,7 +40,7 @@ It is required by `scripts/gate.sh`.
 Run:
 
 ```bash
-rg -n "^(<<<<<<<|=======|>>>>>>>)" -S .
+rg -n "^(<{7}|={7}|>{7})" -S .
 ```
 
 Expected result: no conflict markers found.

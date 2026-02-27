@@ -1,3 +1,0 @@
-$ make lint
-./scripts/lint.sh
-lint ok

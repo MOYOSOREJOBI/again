@@ -1,3 +1,0 @@
-$ bash -lc cd services/inference && pytest -q
-EXIT:0
-\n$ bash -lc cd services/inference && pytest -q

@@ -9,6 +9,20 @@ PROOF_DIR="${TS_DIR}/proofs"
 LOG_DIR="${TS_DIR}/logs"
 mkdir -p "${PROOF_DIR}" "${LOG_DIR}"
 
+emit_status() {
+  echo "STATUS=$1"
+  echo "REASON=$2"
+  echo "PROOFS_DIR=${PROOF_DIR}"
+  echo "LOGS_DIR=${LOG_DIR}"
+}
+
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo "SKIP: docker unavailable" | tee -a "${LOG_DIR}/runtime-proof.log"
+  echo "docker unavailable" > "${PROOF_DIR}/SKIP_DOCKER.txt"
+  emit_status "SKIP" "docker unavailable"
+  exit 2
+fi
+
 log() { tee -a "${LOG_DIR}/runtime-proof.log"; }
 
 echo "=== clean up ===" | log
@@ -20,7 +34,6 @@ ${DC} up -d --build >>"${LOG_DIR}/compose_up.log" 2>&1
 echo "=== wait healthy (robust) ===" | log
 deadline=$((SECONDS+300))
 while true; do
-  # robust: inspect health directly (no reliance on compose json formatting)
   bad=$(${DC} ps -q | while read -r cid; do
     st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid")
     name=$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')
@@ -33,6 +46,7 @@ while true; do
     echo "FAIL: containers not healthy" | log
     ${DC} ps >>"${LOG_DIR}/compose_ps.log" 2>&1 || true
     ${DC} logs --tail=300 >>"${LOG_DIR}/compose_logs_tail.log" 2>&1 || true
+    emit_status "FAIL" "containers not healthy"
     exit 1
   fi
   sleep 3
@@ -73,6 +87,7 @@ PY
   then break; fi
   if [ "${SECONDS}" -gt "${deadline}" ]; then
     echo "FAIL: warm data not present" | log
+    emit_status "FAIL" "warm data not present"
     exit 1
   fi
   sleep 2
@@ -85,18 +100,16 @@ python3 scripts/prom_up_check.py http://localhost:9090 --from-config prometheus/
 touch "${PROOF_DIR}/S4_prom_up.ok"
 
 echo "=== Grafana provision proof via HTTP API ===" | log
-# Grafana Health API is /api/health; use basic auth if configured.
-# Prefer creds from compose env; if not present, default admin:admin.
 GF_USER="${GF_USER:-admin}"
 GF_PASS="${GF_PASS:-admin}"
 curl -fsS "http://${GF_USER}:${GF_PASS}@localhost:3001/api/health" | tee "${LOG_DIR}/grafana_health.json" >/dev/null
-# Confirm dashboards exist (search API):
 curl -fsS "http://${GF_USER}:${GF_PASS}@localhost:3001/api/search?type=dash-db" | tee "${LOG_DIR}/grafana_search.json" >/dev/null
-python3 - <<'PY'
-import json
-d=json.load(open("docs/audit/_latest/logs/grafana_search.json"))
+python3 - "${LOG_DIR}/grafana_search.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
 assert isinstance(d,list) and len(d)>0, "no dashboards found"
 PY
 touch "${PROOF_DIR}/S5_grafana_provisioned.ok"
 
 echo "PASS runtime-proof" | log
+emit_status "PASS" "runtime proof complete"

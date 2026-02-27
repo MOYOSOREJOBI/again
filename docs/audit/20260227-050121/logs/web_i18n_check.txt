@@ -1,6 +1,0 @@
-$ (cd web && npm run check:i18n)
-
-> sentinel-web@0.1.0 check:i18n
-> node scripts/i18n-check.js
-
-i18n check passed for 17 locales with 9 keys
