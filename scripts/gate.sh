@@ -6,6 +6,10 @@ make doctor
 make lint
 make test
 
+# S1 explicitly requires demo pass.
+echo "=== GATE: Demo ==="
+make demo
+
 echo "=== GATE: Web build/tests ==="
 ( cd web && npm ci && npm run build && npm test -- --runInBand )
 

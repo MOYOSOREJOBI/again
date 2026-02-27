@@ -21,3 +21,8 @@ docker run --rm -t \
     npx playwright --version
     npx playwright test
   '
+
+if [ -n "${AUDIT_OUT:-}" ]; then
+  mkdir -p "${AUDIT_OUT}/proof"
+  date -u +%Y-%m-%dT%H:%M:%SZ > "${AUDIT_OUT}/proof/s10_playwright.ok"
+fi
