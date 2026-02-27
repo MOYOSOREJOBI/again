@@ -152,6 +152,7 @@ func main() {
 					top = append(top, map[string]any{"id": row.ID, "symbol": row.Symbol, "priorityScore": row.PriorityScore, "compositeRisk": row.CompositeRisk, "severityBand": row.SeverityBand})
 				}
 				industryConcentration := []map[string]any{}
+				industryWhere, industryArgs := buildExecutiveIndustryWhere(f)
 				industryArgs := []any{}
 				industryWhere := windowSQLForExecutive(f.Window)
 				if f.Window == "custom" && !f.From.IsZero() && !f.To.IsZero() {
@@ -212,11 +213,11 @@ func main() {
 			if err == nil {
 				defer rp.Close()
 				for rp.Next() {
-					var id, st, mv, fv, wp string
+					var id, st, rm, mv, fv, wp string
 					var req, stt, ct any
 					var late int
-					if rp.Scan(&id, &st, &req, &stt, &ct, &mv, &fv, &wp, &late) == nil {
-						replays = append(replays, map[string]any{"id": id, "status": st, "requestedAt": req, "startedAt": stt, "completedAt": ct, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late})
+					if rp.Scan(&id, &st, &req, &stt, &ct, &rm, &mv, &fv, &wp, &late) == nil {
+						replays = append(replays, map[string]any{"id": id, "status": st, "requestedAt": req, "startedAt": stt, "completedAt": ct, "replayMode": rm, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late})
 					}
 				}
 			}
@@ -425,4 +426,27 @@ func windowSQLForExecutive(tw string) string {
 	default:
 		return "i.last_activity_at > now()-interval '24 hours'"
 	}
+}
+
+func buildExecutiveIndustryWhere(f filters) (string, []any) {
+	args := []any{}
+	where := windowSQLForExecutive(f.Window)
+	if f.Window == "custom" {
+		from, to := f.From, f.To
+		if !from.IsZero() && !to.IsZero() && to.Before(from) {
+			from, to = to, from
+		}
+		switch {
+		case !from.IsZero() && !to.IsZero():
+			args = append(args, from, to)
+			where = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(args)-1, len(args))
+		case !from.IsZero():
+			args = append(args, from)
+			where = fmt.Sprintf("i.last_activity_at >= $%d", len(args))
+		case !to.IsZero():
+			args = append(args, to)
+			where = fmt.Sprintf("i.last_activity_at <= $%d", len(args))
+		}
+	}
+	return where, args
 }
