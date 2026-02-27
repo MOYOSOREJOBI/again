@@ -15,8 +15,10 @@ import (
 
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/kafka"
 	"sentinel/internal/logging"
+	"sentinel/internal/metrics"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -30,6 +32,11 @@ type Tick struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8081)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := logging.New("aggregator")
@@ -55,6 +62,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"service":"aggregator","version":"dev","links":["/healthz","/readyz","/metrics","/docs"]}`))
+	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, probeCancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer probeCancel()
@@ -72,6 +83,7 @@ func main() {
 		}
 		w.Write([]byte("ok"))
 	})
+	mux.HandleFunc("/metrics", metrics.Handler)
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: mux, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second}
 	go func() {
 		logger.Info("starting health server", map[string]any{"addr": cfg.HTTPAddr})

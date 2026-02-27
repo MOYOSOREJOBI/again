@@ -10,14 +10,15 @@
     "lint:fix": "tsc --noEmit --pretty false",
     "typecheck": "next build --no-lint && tsc --noEmit",
     "test": "rm -rf .tmp-tests && tsc -p tests/tsconfig.json && node --test .tmp-tests/tests/*.test.js .tmp-tests/tests/**/*.test.js",
-    "test:watch": "npm run test"
+    "test:watch": "npm run test",
+    "test:e2e": "npx -y @playwright/test@1.53.0 test",
+    "check:i18n": "node scripts/i18n-check.js"
   },
   "dependencies": {
     "next": "14.2.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "recharts": "2.12.7",
-    "react-simple-maps": "^3.0.0"
+    "recharts": "2.12.7"
   },
   "devDependencies": {
     "typescript": "5.5.4",
