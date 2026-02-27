@@ -16,6 +16,6 @@ docker run --rm -t \
     node -v
     npm -v
     npm ci
-    npx playwright --version
-    npx playwright test
+    npx -y @playwright/test@1.53.0 --version
+    npx -y @playwright/test@1.53.0 test
   '
