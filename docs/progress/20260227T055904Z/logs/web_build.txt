@@ -1,0 +1,43 @@
+$ (cd web && npm run build)
+
+> sentinel-web@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.5
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/13) ...
+   Generating static pages (3/13) 
+   Generating static pages (6/13) 
+   Generating static pages (9/13) 
+ ✓ Generating static pages (13/13)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    2.68 kB        89.8 kB
+├ ○ /_not-found                          871 B            88 kB
+├ ○ /about                               3.61 kB        98.4 kB
+├ ○ /api/sse/alerts                      0 B                0 B
+├ ○ /case                                3.63 kB        98.4 kB
+├ ƒ /case/[id]                           4.12 kB        98.9 kB
+├ ○ /command-center                      3.57 kB         102 kB
+├ ○ /executive                           3.44 kB        98.2 kB
+├ ○ /glossary                            3.73 kB        98.5 kB
+├ ○ /governance                          3.58 kB        98.3 kB
+├ ƒ /incident/[id]                       3.75 kB        98.5 kB
+├ ○ /queue                               1.02 kB        99.1 kB
+├ ƒ /replay/[job]                        3.71 kB        98.5 kB
+└ ○ /trust                               708 B          98.8 kB
++ First Load JS shared by all            87.1 kB
+  ├ chunks/23-5761d438dd15b549.js        31.5 kB
+  ├ chunks/fd9d1056-95542c12c8153870.js  53.6 kB
+  └ other shared chunks (total)          1.98 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
