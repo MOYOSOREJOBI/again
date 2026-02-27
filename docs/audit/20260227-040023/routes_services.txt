@@ -1,0 +1,57 @@
+cmd/alerts/main.go:87:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+cmd/alerts/main.go:88:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:91:	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:109:	r.Get("/metrics", metrics.Handler)
+cmd/alerts/main.go:110:	r.Get("/sse/alerts", sse)
+cmd/alerts/main.go:112:	r.Post("/alerts/{id}/ack", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:128:	r.Post("/incidents/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:163:	r.Post("/cases", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:180:	r.Post("/incidents/{id}/promote-case", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:201:	r.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:225:	r.Get("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:295:	r.Post("/cases/{id}/notes", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:318:	r.Post("/cases/{id}/evidence", func(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:343:	r.Post("/cases/{id}/disposition", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:55:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+cmd/gateway-api/main.go:56:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:59:	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:66:	r.Get("/metrics", metrics.Handler)
+cmd/gateway-api/main.go:68:	r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:102:	r.Post("/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:113:	r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
+cmd/gateway-api/main.go:135:	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+cmd/query/main.go:75:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+cmd/query/main.go:76:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:79:	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:86:	r.Get("/metrics", metrics.Handler)
+cmd/query/main.go:88:	r.Get("/debug/seed-status", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:116:		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:129:		pr.Get("/command-center", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:142:		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:154:		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:166:		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:228:		pr.Get("/governance/summary", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:256:		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:267:			selectedMode := normalizeReplayViewMode(r.URL.Query().Get("mode"))
+cmd/query/main.go:279:		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:293:		pr.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:311:		pr.Get("/case/{id}", func(w http.ResponseWriter, r *http.Request) {
+cmd/query/main.go:323:		pr.Get("/stream/queue", sseStream(func(ctx context.Context) any {
+cmd/query/main.go:331:		pr.Get("/stream/command-center", sseStream(func(ctx context.Context) any {
+cmd/query/main.go:335:		pr.Get("/stream/trust", sseStream(func(ctx context.Context) any {
+cmd/query/main.go:384:	tw := normalizeWindow(q.Get("window"))
+cmd/query/main.go:386:		tw = normalizeWindow(q.Get("time_window"))
+cmd/query/main.go:391:	from, _ := time.Parse(time.RFC3339, q.Get("from"))
+cmd/query/main.go:392:	to, _ := time.Parse(time.RFC3339, q.Get("to"))
+cmd/query/main.go:393:	country := q.Get("countryCode")
+cmd/query/main.go:395:		country = q.Get("country")
+cmd/query/main.go:397:	return filters{Window: tw, From: from, To: to, CountryCode: country, Region: q.Get("region"), Sector: q.Get("sector"), Industry: q.Get("industry"), Venue: q.Get("venue"), Symbol: q.Get("symbol"), Locale: q.Get("locale")}
+cmd/governance/main.go:67:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+cmd/governance/main.go:68:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+cmd/governance/main.go:71:	r.Get("/readyz", readinessHandler(pool))
+cmd/governance/main.go:72:	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
+cmd/governance/main.go:107:	r.Get("/metrics", metrics.Handler)
+cmd/governance/main.go:108:	r.With(middleware.RateLimit(rateLimitSubjectKey("gov", pub), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+cmd/governance/main.go:138:	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow", pub), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+cmd/governance/main.go:181:	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
+cmd/governance/main.go:279:		if authz := r.Header.Get("Authorization"); len(authz) > 7 {

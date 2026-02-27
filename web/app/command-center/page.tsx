@@ -12,6 +12,8 @@ import { useSSE } from '../../lib/useSSE'
 
 const RiskGlobe = dynamic(() => import('../../components/RiskGlobe').then(m => m.RiskGlobe), { ssr: false })
 
+const RiskGlobe = dynamic(() => import('../../components/RiskGlobe').then(m => m.RiskGlobe), { ssr: false })
+
 export default function CommandCenterPage() {
   const [filters, setFilters] = useState<GlobalFilters>({ window: '24h' })
   const [data, setData] = useState<any>(null)
