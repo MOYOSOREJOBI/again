@@ -2,24 +2,12 @@ package query
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, f QueueFilters) (map[string]any, error) {
-	args := []any{}
-	where := windowSQL(f.TimeWindow)
-	add := func(col, val string) {
-		if val == "" {
-			return
-		}
-		args = append(args, val)
-		where += fmt.Sprintf(" AND %s=$%d", col, len(args))
-	}
-	add("m.region", f.Region)
-	add("m.country_code", f.Country)
-	add("m.industry", f.Industry)
+	where, args := whereClause(f)
 
 	var open, high int
 	_ = db.QueryRow(ctx, `SELECT count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE i.status in ('open','ack') AND `+where, args...).Scan(&open)
@@ -65,5 +53,5 @@ func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, f QueueFilters) (m
 		}
 	}
 
-	return map[string]any{"timeWindow": f.TimeWindow, "openIncidents": open, "highRiskCount": high, "backlogDelta": high - open, "topIncidents": topIncidents, "topCountries": countries, "topIndustries": industries, "trust": map[string]any{"state": "stable"}}, nil
+	return map[string]any{"timeWindow": f.Window, "openIncidents": open, "highRiskCount": high, "backlogDelta": high - open, "topIncidents": topIncidents, "topCountries": countries, "topIndustries": industries, "trust": map[string]any{"state": "stable"}}, nil
 }

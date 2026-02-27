@@ -31,7 +31,18 @@ const (
 	ttlExecutive = 10 * time.Second
 )
 
-type filters struct{ TimeWindow, Country, Region, Industry string }
+type filters struct {
+	Window      string
+	From        time.Time
+	To          time.Time
+	CountryCode string
+	Region      string
+	Sector      string
+	Industry    string
+	Venue       string
+	Symbol      string
+	Locale      string
+}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -68,9 +79,9 @@ func main() {
 		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
-			key := cache.QueueKey(claims.Role, f.Region, f.Country, f.Industry, f.TimeWindow)
+			key := cache.QueueKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlQueue, func() ([]qrm.QueueRow, error) {
-				return qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -81,9 +92,9 @@ func main() {
 		pr.Get("/command-center", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
-			key := cache.CommandCenterKey(claims.Role, f.Region, f.Industry, f.TimeWindow)
+			key := cache.CommandCenterKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
-				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -93,9 +104,9 @@ func main() {
 		})
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.TrustKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.TrustKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
-				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
@@ -105,29 +116,29 @@ func main() {
 		})
 		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.WorldMapKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.WorldMapKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
 			countries, err := cache.GetOrLoadJSON(r.Context(), key, ttlWorldMap, func() ([]qrm.CountryAgg, error) {
-				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
 			if err != nil {
 				http.Error(w, "internal", 500)
 				return
 			}
-			httpx.JSON(w, 200, map[string]any{"countries": countries, "timeWindow": f.TimeWindow})
+			httpx.JSON(w, 200, map[string]any{"countries": countries, "timeWindow": f.Window})
 		})
 		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
-			key := cache.ExecutiveKey(f.Region, f.Industry, f.TimeWindow)
+			key := cache.ExecutiveKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlExecutive, func() (map[string]any, error) {
-				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				if err != nil {
 					return nil, err
 				}
-				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				countryConcentration, err := qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				if err != nil {
 					return nil, err
 				}
-				trust, _ := qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{TimeWindow: f.TimeWindow, Country: f.Country, Region: f.Region, Industry: f.Industry})
+				trust, _ := qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				top := make([]map[string]any, 0, 5)
 				for i, row := range topRisks {
 					if i >= 5 {
@@ -136,8 +147,7 @@ func main() {
 					top = append(top, map[string]any{"id": row.ID, "symbol": row.Symbol, "priorityScore": row.PriorityScore, "compositeRisk": row.CompositeRisk, "severityBand": row.SeverityBand})
 				}
 				industryConcentration := []map[string]any{}
-				industryArgs := []any{}
-				industryWhere := windowSQLForExecutive(f.TimeWindow)
+				industryWhere, industryArgs := buildExecutiveIndustryWhere(f)
 				addIndustry := func(col, val string) {
 					if val == "" {
 						return
@@ -146,8 +156,11 @@ func main() {
 					industryWhere += fmt.Sprintf(" AND %s=$%d", col, len(industryArgs))
 				}
 				addIndustry("m.region", f.Region)
-				addIndustry("m.country_code", f.Country)
+				addIndustry("m.country_code", f.CountryCode)
 				addIndustry("m.industry", f.Industry)
+				addIndustry("m.sector", f.Sector)
+				addIndustry("m.venue", f.Venue)
+				addIndustry("i.primary_symbol", f.Symbol)
 				ir, err := pool.Query(r.Context(), `SELECT coalesce(m.industry,'Unknown'),count(i.id) FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE `+industryWhere+` GROUP BY 1 ORDER BY 2 DESC LIMIT 8`, industryArgs...)
 				if err == nil {
 					defer ir.Close()
@@ -185,15 +198,15 @@ func main() {
 				}
 			}
 			replays := []map[string]any{}
-			rp, err := pool.Query(r.Context(), `SELECT id::text,status,requested_at,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs ORDER BY requested_at DESC LIMIT 25`)
+			rp, err := pool.Query(r.Context(), `SELECT id::text,status,requested_at,started_at,completed_at,replay_mode,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs ORDER BY requested_at DESC LIMIT 25`)
 			if err == nil {
 				defer rp.Close()
 				for rp.Next() {
-					var id, st, mv, fv, wp string
+					var id, st, rm, mv, fv, wp string
 					var req, stt, ct any
 					var late int
-					if rp.Scan(&id, &st, &req, &stt, &ct, &mv, &fv, &wp, &late) == nil {
-						replays = append(replays, map[string]any{"id": id, "status": st, "requestedAt": req, "startedAt": stt, "completedAt": ct, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late})
+					if rp.Scan(&id, &st, &req, &stt, &ct, &rm, &mv, &fv, &wp, &late) == nil {
+						replays = append(replays, map[string]any{"id": id, "status": st, "requestedAt": req, "startedAt": stt, "completedAt": ct, "replayMode": rm, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late})
 					}
 				}
 			}
@@ -201,17 +214,26 @@ func main() {
 		})
 		pr.Get("/replay/{job}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "job")
-			var status, mv, fv, wp string
+			var status, replayMode, mv, fv, wp string
 			var late int
 			var s, e, started, completed any
-			if err := pool.QueryRow(r.Context(), `SELECT status,time_window_start,time_window_end,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs WHERE id=$1`, id).Scan(&status, &s, &e, &started, &completed, &mv, &fv, &wp, &late); err != nil {
+			if err := pool.QueryRow(r.Context(), `SELECT status,replay_mode,time_window_start,time_window_end,started_at,completed_at,model_version,feature_set_version,watermark_policy_id,allowed_lateness_ms FROM replay_jobs WHERE id=$1`, id).Scan(&status, &replayMode, &s, &e, &started, &completed, &mv, &fv, &wp, &late); err != nil {
 				http.Error(w, "not found", 404)
 				return
 			}
 			var result any = map[string]any{}
 			_ = pool.QueryRow(r.Context(), `SELECT diff_summary FROM replay_runs WHERE id=$1`, id).Scan(&result)
+			selectedMode := normalizeReplayViewMode(r.URL.Query().Get("mode"))
 			partial := status != "completed"
-			httpx.JSON(w, 200, map[string]any{"id": id, "status": status, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"deterministic replay scoring uses return-based approximation"}})
+			resp := map[string]any{"id": id, "status": status, "replayMode": replayMode, "selectedMode": selectedMode, "timeWindowStart": s, "timeWindowEnd": e, "startedAt": started, "completedAt": completed, "modelVersion": mv, "featureSetVersion": fv, "watermarkPolicy": wp, "allowedLatenessMs": late, "result": result, "partial": partial, "limitations": []string{"deterministic replay scoring uses return-based approximation"}}
+			if m, ok := result.(map[string]any); ok {
+				if selectedMode == "as_scored" {
+					resp["selectedStats"] = m["as_scored"]
+				} else {
+					resp["selectedStats"] = m["recomputed"]
+				}
+			}
+			httpx.JSON(w, 200, resp)
 		})
 		pr.Get("/incident/{id}", func(w http.ResponseWriter, r *http.Request) {
 			id := chi.URLParam(r, "id")
@@ -258,7 +280,7 @@ func main() {
 			httpx.JSON(w, 200, map[string]any{"id": cid, "status": status, "reason": reason, "owner": owner, "created_at": createdAt, "updated_at": updatedAt, "incident_id": incidentID})
 		})
 		pr.Get("/stream/queue", sseStream(func(ctx context.Context) any {
-			rows, _ := qrm.LoadQueue(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			rows, _ := qrm.LoadQueue(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			inc := map[string]any{"id": 0}
 			if len(rows) > 0 {
 				inc = map[string]any{"id": rows[0].ID, "symbol": rows[0].Symbol, "priorityScore": rows[0].PriorityScore, "severityBand": rows[0].SeverityBand, "recommendedAction": rows[0].RecommendedAction}
@@ -266,11 +288,11 @@ func main() {
 			return map[string]any{"type": "upsert", "incident": inc}
 		}, "queue_patch"))
 		pr.Get("/stream/command-center", sseStream(func(ctx context.Context) any {
-			cc, _ := qrm.LoadCommandCenter(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			cc, _ := qrm.LoadCommandCenter(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			return cc
 		}, "command_center_patch"))
 		pr.Get("/stream/trust", sseStream(func(ctx context.Context) any {
-			t, _ := qrm.LoadTrust(ctx, pool, qrm.QueueFilters{TimeWindow: "24h"})
+			t, _ := qrm.LoadTrust(ctx, pool, qrm.QueueFilters{Window: "24h"})
 			return t
 		}, "trust_patch"))
 	})
@@ -318,11 +340,38 @@ func sseStream(payload func(context.Context) any, event string) http.HandlerFunc
 
 func parseFilters(r *http.Request) filters {
 	q := r.URL.Query()
-	tw := q.Get("time_window")
+	tw := normalizeWindow(q.Get("window"))
+	if tw == "" {
+		tw = normalizeWindow(q.Get("time_window"))
+	}
 	if tw == "" {
 		tw = "24h"
 	}
-	return filters{TimeWindow: tw, Country: q.Get("country"), Region: q.Get("region"), Industry: q.Get("industry")}
+	from, _ := time.Parse(time.RFC3339, q.Get("from"))
+	to, _ := time.Parse(time.RFC3339, q.Get("to"))
+	country := q.Get("countryCode")
+	if country == "" {
+		country = q.Get("country")
+	}
+	return filters{Window: tw, From: from, To: to, CountryCode: country, Region: q.Get("region"), Sector: q.Get("sector"), Industry: q.Get("industry"), Venue: q.Get("venue"), Symbol: q.Get("symbol"), Locale: q.Get("locale")}
+}
+
+func normalizeReplayViewMode(in string) string {
+	switch in {
+	case "as_scored", "recomputed":
+		return in
+	default:
+		return "recomputed"
+	}
+}
+
+func normalizeWindow(in string) string {
+	switch in {
+	case "1h", "24h", "7d", "custom":
+		return in
+	default:
+		return ""
+	}
 }
 
 func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
@@ -363,4 +412,27 @@ func windowSQLForExecutive(tw string) string {
 	default:
 		return "i.last_activity_at > now()-interval '24 hours'"
 	}
+}
+
+func buildExecutiveIndustryWhere(f filters) (string, []any) {
+	args := []any{}
+	where := windowSQLForExecutive(f.Window)
+	if f.Window == "custom" {
+		from, to := f.From, f.To
+		if !from.IsZero() && !to.IsZero() && to.Before(from) {
+			from, to = to, from
+		}
+		switch {
+		case !from.IsZero() && !to.IsZero():
+			args = append(args, from, to)
+			where = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(args)-1, len(args))
+		case !from.IsZero():
+			args = append(args, from)
+			where = fmt.Sprintf("i.last_activity_at >= $%d", len(args))
+		case !to.IsZero():
+			args = append(args, to)
+			where = fmt.Sprintf("i.last_activity_at <= $%d", len(args))
+		}
+	}
+	return where, args
 }

@@ -66,3 +66,12 @@ func (r *Ring) Std() float64 {
 	}
 	return math.Sqrt(v)
 }
+
+func (r *Ring) AtLag(lag int) (float64, bool) {
+	if r.count == 0 || lag < 0 || lag >= r.count {
+		return 0, false
+	}
+	last := (r.idx - 1 + r.size) % r.size
+	pos := (last - lag + r.size) % r.size
+	return r.buf[pos], true
+}

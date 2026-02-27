@@ -3,11 +3,23 @@ package query
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type QueueFilters struct{ TimeWindow, Country, Region, Industry string }
+type QueueFilters struct {
+	Window      string
+	From        time.Time
+	To          time.Time
+	CountryCode string
+	Region      string
+	Sector      string
+	Industry    string
+	Venue       string
+	Symbol      string
+	Locale      string
+}
 
 type QueueRow struct {
 	ID                int64   `json:"id"`
@@ -34,19 +46,45 @@ func windowSQL(tw string) string {
 	}
 }
 
-func LoadQueue(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]QueueRow, error) {
+func whereClause(f QueueFilters) (string, []any) {
 	args := []any{}
-	q := `SELECT i.id,i.primary_symbol,i.status,i.severity_band,coalesce(i.priority_score,0),coalesce(i.composite_risk,0),coalesce(i.confidence,0),coalesce(m.region,''),coalesce(m.country_code,''),coalesce(m.industry,''),coalesce(i.top_driver_1,'watch') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + windowSQL(f.TimeWindow)
-	add := func(col, val string) {
-		if val == "" {
+	where := windowSQL(f.Window)
+	if f.Window == "custom" {
+		from, to := f.From, f.To
+		if !from.IsZero() && !to.IsZero() && to.Before(from) {
+			from, to = to, from
+		}
+		switch {
+		case !from.IsZero() && !to.IsZero():
+			args = append(args, from, to)
+			where = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(args)-1, len(args))
+		case !from.IsZero():
+			args = append(args, from)
+			where = fmt.Sprintf("i.last_activity_at >= $%d", len(args))
+		case !to.IsZero():
+			args = append(args, to)
+			where = fmt.Sprintf("i.last_activity_at <= $%d", len(args))
+		}
+	}
+	add := func(col string, val any, skip bool) {
+		if skip {
 			return
 		}
 		args = append(args, val)
-		q += fmt.Sprintf(" AND %s=$%d", col, len(args))
+		where += fmt.Sprintf(" AND %s=$%d", col, len(args))
 	}
-	add("m.region", f.Region)
-	add("m.country_code", f.Country)
-	add("m.industry", f.Industry)
+	add("m.region", f.Region, f.Region == "")
+	add("m.country_code", f.CountryCode, f.CountryCode == "")
+	add("m.sector", f.Sector, f.Sector == "")
+	add("m.industry", f.Industry, f.Industry == "")
+	add("m.venue", f.Venue, f.Venue == "")
+	add("i.primary_symbol", f.Symbol, f.Symbol == "")
+	return where, args
+}
+
+func LoadQueue(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]QueueRow, error) {
+	where, args := whereClause(f)
+	q := `SELECT i.id,i.primary_symbol,i.status,i.severity_band,coalesce(i.priority_score,0),coalesce(i.composite_risk,0),coalesce(i.confidence,0),coalesce(m.region,''),coalesce(m.country_code,''),coalesce(m.industry,''),coalesce(i.top_driver_1,'watch') FROM incidents i LEFT JOIN instrument_metadata m ON m.instrument_id=i.primary_symbol WHERE ` + where
 	q += " ORDER BY i.priority_score DESC,i.last_activity_at DESC LIMIT 250"
 
 	rows, err := db.Query(ctx, q, args...)

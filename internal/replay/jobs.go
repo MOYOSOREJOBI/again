@@ -22,7 +22,7 @@ func markReplayJobCompleted(ctx context.Context, db *pgxpool.Pool, jobID string)
 
 func loadReplayJob(ctx context.Context, db *pgxpool.Pool, jobID string) (Job, error) {
 	var j Job
-	err := db.QueryRow(ctx, `SELECT id::text,status,requested_by,time_window_start,time_window_end,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version FROM replay_jobs WHERE id=$1`, jobID).Scan(&j.ID, &j.Status, &j.RequestedBy, &j.TimeWindowStart, &j.TimeWindowEnd, &j.WatermarkPolicyID, &j.AllowedLatenessMS, &j.ModelVersion, &j.FeatureSetVersion)
+	err := db.QueryRow(ctx, `SELECT id::text,status,requested_by,time_window_start,time_window_end,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version,replay_mode FROM replay_jobs WHERE id=$1`, jobID).Scan(&j.ID, &j.Status, &j.RequestedBy, &j.TimeWindowStart, &j.TimeWindowEnd, &j.WatermarkPolicyID, &j.AllowedLatenessMS, &j.ModelVersion, &j.FeatureSetVersion, &j.ReplayMode)
 	return j, err
 }
 
