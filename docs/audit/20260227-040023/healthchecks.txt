@@ -1,0 +1,85 @@
+2:  redpanda:
+6:    healthcheck:
+7:      test: ["CMD","rpk","cluster","info"]
+8:      interval: 5s
+9:      timeout: 3s
+10:      retries: 30
+12:  postgres:
+16:    healthcheck:
+17:      test: ["CMD-SHELL","pg_isready -U sentinel -d sentinel"]
+18:      interval: 5s
+19:      timeout: 3s
+20:      retries: 30
+22:  redis:
+25:    healthcheck:
+26:      test: ["CMD","redis-cli","ping"]
+27:      interval: 5s
+28:      timeout: 3s
+29:      retries: 30
+31:  memcached:
+36:  migrate:
+50:  topics-init:
+66:  gateway-api:
+76:    healthcheck:
+77:      test: ["CMD", "/app/service", "healthcheck"]
+78:      test: ["CMD", "/service", "healthcheck"]
+79:      interval: 5s
+80:      timeout: 2s
+81:      retries: 24
+82:      start_period: 10s
+84:  simulator:
+90:    healthcheck:
+91:      test: ["CMD", "/app/service", "healthcheck"]
+92:      interval: 5s
+93:      timeout: 2s
+94:      retries: 24
+95:      start_period: 10s
+97:  aggregator:
+107:    healthcheck:
+108:      test: ["CMD", "/app/service", "healthcheck"]
+109:      test: ["CMD", "/service", "healthcheck"]
+110:      interval: 5s
+111:      timeout: 2s
+112:      retries: 24
+113:      start_period: 10s
+115:  features:
+125:    healthcheck:
+126:      test: ["CMD", "/app/service", "healthcheck"]
+127:      test: ["CMD", "/service", "healthcheck"]
+128:      interval: 5s
+129:      timeout: 2s
+130:      retries: 24
+131:      start_period: 10s
+133:  inference:
+139:    healthcheck:
+140:      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz')\""]
+141:      interval: 5s
+142:      timeout: 3s
+143:      retries: 30
+145:  alerts:
+155:    healthcheck:
+156:      test: ["CMD", "/app/service", "healthcheck"]
+157:      test: ["CMD", "/service", "healthcheck"]
+158:      interval: 5s
+159:      timeout: 2s
+160:      retries: 24
+161:      start_period: 10s
+163:  governance:
+170:    healthcheck:
+171:      test: ["CMD", "/app/service", "healthcheck"]
+172:      test: ["CMD", "/service", "healthcheck"]
+173:      interval: 5s
+174:      timeout: 2s
+175:      retries: 24
+176:      start_period: 10s
+178:  query:
+185:    healthcheck:
+186:      test: ["CMD", "/app/service", "healthcheck"]
+187:      test: ["CMD", "/service", "healthcheck"]
+188:      interval: 5s
+189:      timeout: 2s
+190:      retries: 24
+191:      start_period: 10s
+193:  web:
+204:  prometheus:
+209:  grafana:
