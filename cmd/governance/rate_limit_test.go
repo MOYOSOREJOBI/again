@@ -26,6 +26,19 @@ func TestRateLimitSubjectKey_PrioritizesAuthorization(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "sentinel_token", Value: "cookie-token"})
 
 	if got := keyFn(req); got != "gov:sub:analyst@example.com" {
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestRateLimitSubjectKey_PrioritizesAuthorization(t *testing.T) {
+	keyFn := rateLimitSubjectKey("gov")
+	req := httptest.NewRequest(http.MethodPost, "/models/deploy", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	req.Header.Set("Authorization", "Bearer token123")
+	req.AddCookie(&http.Cookie{Name: "sentinel_token", Value: "cookie-token"})
+
+	if got := keyFn(req); got != "gov:Bearer token123" {
 		t.Fatalf("unexpected key: %s", got)
 	}
 }
@@ -45,6 +58,12 @@ func TestRateLimitSubjectKey_UsesCookieThenIP(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "sentinel_token", Value: tok})
 
 	if got := keyFn(req); got != "workflow:sub:ops@example.com" {
+	keyFn := rateLimitSubjectKey("workflow")
+	req := httptest.NewRequest(http.MethodPost, "/replay/start", nil)
+	req.RemoteAddr = "10.0.0.2:8080"
+	req.AddCookie(&http.Cookie{Name: "sentinel_token", Value: "cookie-token"})
+
+	if got := keyFn(req); got != "workflow:cookie:cookie-token" {
 		t.Fatalf("unexpected cookie key: %s", got)
 	}
 
