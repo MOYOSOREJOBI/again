@@ -1,0 +1,8 @@
+# Routes for simulator
+Source: cmd/simulator/main.go
+
+## Route registrations
+62:	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+63:	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+67:	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+76:	mux.HandleFunc("/metrics", metrics.Handler)

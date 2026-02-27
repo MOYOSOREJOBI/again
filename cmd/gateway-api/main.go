@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+
+	"sentinel/internal/rediskv"
 	"syscall"
 	"time"
 
@@ -19,11 +21,18 @@ import (
 	"sentinel/internal/auth"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/httpx"
+	"sentinel/internal/metrics"
 	"sentinel/internal/middleware"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8080)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfg := config.Load("gateway-api")
@@ -46,6 +55,9 @@ func main() {
 		return claims.Subject, true
 	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"service": "gateway-api", "version": "dev", "links": []string{"/healthz", "/readyz", "/metrics", "/docs"}})
+	})
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if pool.Ping(r.Context()) != nil {
 			http.Error(w, "not ready", 503)
@@ -53,6 +65,7 @@ func main() {
 		}
 		_, _ = w.Write([]byte("ok"))
 	})
+	r.Get("/metrics", metrics.Handler)
 
 	r.Post("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		var in struct{ Email, Password string }
@@ -145,14 +158,25 @@ type loginLimitEntry struct {
 }
 
 var loginAttempts sync.Map
+var loginRedis = rediskv.NewFromEnv()
 
 func loginAllowed(ip, email string) bool {
 	key := "login:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
+	window := 5 * time.Minute
+	if loginRedis != nil && loginRedis.Enabled() {
+		n, err := loginRedis.Incr(context.Background(), key)
+		if err == nil {
+			if n == 1 {
+				_ = loginRedis.Expire(context.Background(), key, window)
+			}
+			return n <= 5
+		}
+	}
 	now := time.Now()
-	v, _ := loginAttempts.LoadOrStore(key, loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)})
+	v, _ := loginAttempts.LoadOrStore(key, loginLimitEntry{Count: 0, Reset: now.Add(window)})
 	e := v.(loginLimitEntry)
 	if now.After(e.Reset) {
-		e = loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)}
+		e = loginLimitEntry{Count: 0, Reset: now.Add(window)}
 	}
 	e.Count++
 	loginAttempts.Store(key, e)
