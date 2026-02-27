@@ -1,0 +1,2 @@
+./scripts/run-demo.sh default
+SKIP: demo-smoke skipped because docker is not available in this environment

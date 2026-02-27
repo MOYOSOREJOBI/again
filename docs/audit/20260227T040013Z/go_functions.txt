@@ -1,0 +1,189 @@
+scripts/seed-users.go:26:func main() {
+internal/audit/audit_chain_test.go:5:func TestVerifyChainDetectsTamper(t *testing.T) {
+internal/audit/audit.go:21:func Append(ctx context.Context, db *pgxpool.Pool, actor, action, details string) error {
+internal/audit/audit.go:29:func Verify(ctx context.Context, db *pgxpool.Pool) (bool, string, error) {
+internal/audit/audit.go:47:func hashFor(prev, actor, action, details string) string {
+internal/audit/audit.go:52:func verifyChain(entries []chainEntry) (bool, string) {
+internal/healthcheck/healthcheck.go:11:func Run(port int, path string) int {
+internal/healthcheck/healthcheck.go:28:func MustPort(env string, fallback int) int {
+internal/healthcheck/healthcheck_test.go:11:func TestMustPort(t *testing.T) {
+internal/healthcheck/healthcheck_test.go:23:func TestRun(t *testing.T) {
+internal/config/validate.go:9:func Validate(c Config) error {
+internal/config/config.go:20:func Load(service string) Config {
+internal/config/config.go:34:func getenv(k, d string) string {
+internal/config/config.go:41:func getbool(k string, d bool) bool {
+internal/config/validate_test.go:5:func TestValidateConfig(t *testing.T) {
+internal/query/world_map.go:19:func LoadWorldMap(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]CountryAgg, error) {
+internal/query/queue.go:38:func windowSQL(tw string) string {
+internal/query/queue.go:49:func whereClause(f QueueFilters) (string, []any) {
+internal/query/queue.go:85:func LoadQueue(ctx context.Context, db *pgxpool.Pool, f QueueFilters) ([]QueueRow, error) {
+internal/query/queue_filters_test.go:9:func TestWhereClauseCustomWindowUsesBetween(t *testing.T) {
+internal/query/queue_filters_test.go:30:func TestWhereClauseNonCustomIgnoresPartialRange(t *testing.T) {
+internal/query/queue_filters_test.go:41:func TestWhereClauseCustomWindowSupportsFromOnly(t *testing.T) {
+internal/query/queue_filters_test.go:52:func TestWhereClauseCustomWindowSupportsToOnly(t *testing.T) {
+internal/query/queue_filters_test.go:63:func TestWhereClauseCustomWindowSwapsInvertedRange(t *testing.T) {
+internal/query/command_center.go:9:func LoadCommandCenter(ctx context.Context, db *pgxpool.Pool, f QueueFilters) (map[string]any, error) {
+internal/query/world_map_test.go:5:func TestCountryAggShape(t *testing.T) {
+internal/query/trust.go:9:func LoadTrust(ctx context.Context, db *pgxpool.Pool, f QueueFilters) (map[string]any, error) {
+internal/query/trust.go:29:func ratioInt(a, b int) float64 {
+internal/marketmath/rolling.go:14:func NewRing(size int) *Ring {
+internal/marketmath/rolling.go:18:func (r *Ring) Push(x float64) {
+internal/marketmath/rolling.go:34:func (r *Ring) Mean() float64 {
+internal/marketmath/rolling.go:41:func (r *Ring) Variance() float64 {
+internal/marketmath/rolling.go:54:func (r *Ring) Count() int {
+internal/marketmath/rolling.go:58:func (r *Ring) SumSq() float64 {
+internal/marketmath/rolling.go:62:func (r *Ring) Std() float64 {
+internal/marketmath/rolling.go:70:func (r *Ring) AtLag(lag int) (float64, bool) {
+internal/marketmath/rolling_test.go:5:func TestRingStats(t *testing.T) {
+internal/marketmath/dq.go:3:func Clip(v, lo, hi float64) float64 {
+internal/marketmath/dq.go:13:func DQPenalty(stalenessScore, lateRatio, outOfOrderRatio, duplicateRatio, missingnessRatio float64) float64 {
+internal/marketmath/rolling_lag_test.go:5:func TestRingAtLag(t *testing.T) {
+internal/marketmath/zscore_test.go:5:func TestZScoreClip(t *testing.T) {
+internal/marketmath/zscore.go:3:func ZScore(x, mean, std float64) float64 {
+internal/marketmath/ewma_floor_test.go:5:func TestEWMAVolHasNumericalFloor(t *testing.T) {
+internal/marketmath/ewma.go:11:func NewEWMA(lambda float64) *EWMA {
+internal/marketmath/ewma.go:15:func (e *EWMA) Update(ret float64) {
+internal/marketmath/ewma.go:25:func (e *EWMA) Vol() float64 {
+internal/marketmath/volume.go:3:func VolumeRatio(vol, mean float64) float64 {
+internal/marketmath/volume.go:10:func VolumeSurprise(vol, mean, std float64) float64 {
+internal/marketmath/volatility.go:5:func RealizedVariance(r *Ring) float64 {
+internal/marketmath/volatility.go:12:func RealizedVol(r *Ring) float64 {
+internal/marketmath/ewma_test.go:5:func TestEWMAUpdate(t *testing.T) {
+internal/marketmath/hash.go:9:func StableFeatureHash(featureMap map[string]float64, orderedKeys []string) (string, error) {
+internal/marketmath/dq_test.go:5:func TestDQPenaltyBounded(t *testing.T) {
+internal/db/db.go:8:func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) { return pgxpool.New(ctx, dsn) }
+cmd/simulator/main.go:24:func main() {
+cmd/simulator/main.go:122:func parseSymbols(raw string) []string {
+cmd/simulator/main.go:137:func defaultSymbols() []string {
+cmd/simulator/main.go:155:func healthcheckAddr(addr, fallback string) string {
+internal/logging/logging.go:12:func New(service string) Logger { return Logger{service: service} }
+internal/logging/logging.go:14:func (l Logger) Info(msg string, fields map[string]any)  { l.out("info", msg, fields) }
+internal/logging/logging.go:15:func (l Logger) Error(msg string, fields map[string]any) { l.out("error", msg, fields) }
+internal/logging/logging.go:17:func (l Logger) out(level, msg string, fields map[string]any) {
+cmd/simulator/main_test.go:5:func TestHealthcheckAddr(t *testing.T) {
+internal/rbac/middleware_test.go:9:func TestRequireForbidden(t *testing.T) {
+internal/rbac/rbac.go:14:func Allowed(role, perm string) bool {
+internal/rbac/rbac.go:22:func Require(role, perm string, next http.Handler) http.Handler {
+internal/rbac/rbac_test.go:5:func TestAllowed(t *testing.T) {
+internal/rbac/rbac_test.go:32:func TestGovernanceReadRoles(t *testing.T) {
+cmd/query/main.go:49:func main() {
+cmd/query/main.go:355:func sseStream(payload func(context.Context) any, event string) http.HandlerFunc {
+cmd/query/main.go:382:func parseFilters(r *http.Request) filters {
+cmd/query/main.go:400:func normalizeReplayViewMode(in string) string {
+cmd/query/main.go:409:func normalizeWindow(in string) string {
+cmd/query/main.go:418:func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
+cmd/query/main.go:430:func requireRole(pub *rsa.PublicKey, perm string) func(http.Handler) http.Handler {
+cmd/query/main.go:447:func windowSQLForExecutive(tw string) string {
+cmd/query/main.go:458:func buildExecutiveIndustryWhere(f filters) (string, []any) {
+cmd/query/main_test.go:10:func TestParseFiltersDefault(t *testing.T) {
+cmd/query/main_test.go:18:func TestParseFiltersExtendedContract(t *testing.T) {
+cmd/query/main_test.go:29:func TestParseFiltersNormalizesAndBackCompat(t *testing.T) {
+cmd/query/main_test.go:40:func TestNormalizeReplayViewMode(t *testing.T) {
+cmd/query/main_test.go:52:func TestBuildExecutiveIndustryWhere_CustomFromOnly(t *testing.T) {
+cmd/query/main_test.go:63:func TestBuildExecutiveIndustryWhere_CustomSwapsInvertedRange(t *testing.T) {
+internal/auth/auth.go:16:func ReadPrivate(path string) (*rsa.PrivateKey, error) {
+internal/auth/auth.go:23:func ReadPublic(path string) (*rsa.PublicKey, error) {
+internal/auth/auth.go:31:func Sign(userID, role string, key *rsa.PrivateKey) (string, error) {
+internal/auth/auth.go:36:func Parse(token string, pub *rsa.PublicKey) (*Claims, error) {
+internal/auth/auth_test.go:12:func TestParseRejectsWrongAlgorithm(t *testing.T) {
+internal/auth/auth_test.go:21:func TestParseRejectsMissingRequiredClaims(t *testing.T) {
+cmd/alerts/main.go:42:func main() {
+cmd/alerts/main.go:384:func consumeScores(ctx context.Context, logger logging.Logger, pool *pgxpool.Pool, c *kgo.Client, p *kgo.Client) {
+cmd/alerts/main.go:438:func createCase(ctx context.Context, w http.ResponseWriter, pool *pgxpool.Pool, actor string, incidentID int64, reason string) {
+cmd/alerts/main.go:463:func fetchRows(pool *pgxpool.Pool, ctx context.Context, q, id string, cols []string) []map[string]any {
+cmd/alerts/main.go:487:func isAllowedCaseTransition(current, next string) bool {
+cmd/alerts/main.go:500:func scoreTS(m map[string]any) time.Time {
+cmd/alerts/main.go:514:func scoreIdempotencyKey(symbol string, ts time.Time, score float64, severity, explanation string) string {
+cmd/alerts/main.go:520:func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
+cmd/alerts/main.go:532:func sse(w http.ResponseWriter, r *http.Request) {
+cmd/alerts/main.go:576:func broadcast(msg string) {
+cmd/alerts/main.go:587:func corsMiddleware(next http.Handler) http.Handler {
+cmd/alerts/main_test.go:5:func TestIsAllowedCaseTransition(t *testing.T) {
+internal/middleware/cors.go:9:func CORS(next http.Handler) http.Handler {
+internal/middleware/cors.go:32:func loadAllowedOrigins() map[string]bool {
+internal/middleware/csrf_test.go:5:func TestCSRFTokenRandom(t *testing.T) {
+cmd/features/main.go:51:func newSymbolState() *symbolState {
+cmd/features/main.go:64:func main() {
+cmd/features/main.go:189:func computeFeatures(st *symbolState, price, vol float64, eventAt time.Time) (map[string]float64, float64) {
+cmd/features/main.go:287:func ratio(a, b float64) float64 {
+cmd/features/main.go:294:func horizonReturn(hist *marketmath.Ring, current float64, lag int) float64 {
+cmd/features/main.go:305:func horizonLogReturn(hist *marketmath.Ring, current float64, lag int) float64 {
+internal/middleware/cors_test.go:10:func TestCORSAllowlist(t *testing.T) {
+cmd/features/main_test.go:9:func TestComputeFeaturesComputesHorizonReturns(t *testing.T) {
+internal/middleware/ratelimit.go:17:func allow(key string, max int, window time.Duration) bool {
+internal/middleware/ratelimit.go:29:func RateLimit(keyFn func(*http.Request) string, max int, window time.Duration) func(http.Handler) http.Handler {
+internal/middleware/ratelimit_test.go:10:func TestRateLimit429(t *testing.T) {
+internal/middleware/csrf.go:18:func NewCSRFToken() (string, error) {
+internal/middleware/csrf.go:26:func BindCSRF(subject, token string, ttl time.Duration) {
+internal/middleware/csrf.go:30:func ClearCSRF(subject string) { csrfStore.Delete(subject) }
+internal/middleware/csrf.go:32:func ValidCSRF(subject, token string) bool {
+internal/middleware/csrf.go:44:func RequireCSRFFunc(subjectFromReq func(*http.Request) (string, bool)) func(http.Handler) http.Handler {
+cmd/gateway-api/login_rate_limit_test.go:8:func TestLoginAllowed_LimitsByIPAndEmail(t *testing.T) {
+cmd/gateway-api/login_rate_limit_test.go:22:func TestLoginAllowed_SeparatesDifferentEmails(t *testing.T) {
+internal/middleware/requestid.go:9:func RequestID(next http.Handler) http.Handler {
+cmd/gateway-api/main.go:28:func main() {
+cmd/gateway-api/main.go:134:func clientIP(r *http.Request) string {
+cmd/gateway-api/main.go:141:func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
+cmd/gateway-api/main.go:160:func loginAllowed(ip, email string) bool {
+internal/cache/keys_test.go:5:func TestKeysIncludeLocaleDimension(t *testing.T) {
+internal/cache/keys_test.go:13:func TestReadModelPrefixesIncludesCurrentGeneration(t *testing.T) {
+internal/cache/keys.go:5:func ReadModelPrefixes() []string {
+internal/cache/keys.go:13:func QueueKey(role, region, country, sector, industry, venue, symbol, locale, window string) string {
+internal/cache/keys.go:17:func CommandCenterKey(role, region, country, sector, industry, venue, symbol, locale, window string) string {
+internal/cache/keys.go:21:func TrustKey(region, country, sector, industry, venue, symbol, locale, window string) string {
+internal/cache/keys.go:25:func WorldMapKey(region, country, sector, industry, venue, symbol, locale, window string) string {
+internal/cache/keys.go:29:func ExecutiveKey(region, country, sector, industry, venue, symbol, locale, window string) string {
+internal/cache/invalidation_test.go:9:func TestInvalidateByPrefixes(t *testing.T) {
+cmd/aggregator/main.go:34:func main() {
+internal/cache/redis.go:17:func GetOrLoadJSON[T any](_ context.Context, key string, ttl time.Duration, loader func() (T, error)) (T, error) {
+internal/cache/invalidation.go:8:func InvalidateByPrefixes(_ context.Context, prefixes ...string) {
+internal/cache/redis_test.go:9:func TestGetOrLoadJSON(t *testing.T) {
+cmd/governance/replay_mode_test.go:5:func TestNormalizeReplayMode(t *testing.T) {
+cmd/governance/main.go:31:func main() {
+cmd/governance/main.go:233:func authn(r *http.Request, pub *rsa.PublicKey) (*auth.Claims, bool) {
+cmd/governance/main.go:245:func corsMiddleware(next http.Handler) http.Handler {
+cmd/governance/main.go:263:func readinessHandler(p pinger) http.HandlerFunc {
+cmd/governance/main.go:277:func rateLimitSubjectKey(prefix string, pub *rsa.PublicKey) func(*http.Request) string {
+cmd/governance/main.go:298:func normalizeReplayMode(in string) string {
+internal/incidents/severity_test.go:5:func TestSeverityDQOverride(t *testing.T) {
+cmd/governance/rate_limit_test.go:13:func TestRateLimitSubjectKey_PrioritizesAuthorization(t *testing.T) {
+cmd/governance/rate_limit_test.go:34:func TestRateLimitSubjectKey_UsesCookieThenIP(t *testing.T) {
+cmd/governance/rate_limit_test.go:60:func TestRateLimitSubjectKey_FallbackForInvalidBearerToken(t *testing.T) {
+internal/incidents/severity.go:3:func SeverityFromPriority(priority, confidence, dq float64) string {
+cmd/governance/readiness_test.go:12:func (f fakePinger) Ping(context.Context) error { return f.err }
+cmd/governance/readiness_test.go:14:func TestReadinessHandler_DependencyDown(t *testing.T) {
+cmd/governance/readiness_test.go:23:func TestReadinessHandler_DependencyReady(t *testing.T) {
+internal/incidents/incidents.go:14:func FindOrCreateOpenIncident(ctx context.Context, pool *pgxpool.Pool, symbol string, score, escalation, confidence float64, featureHash, modelVersion string, at time.Time) (int64, error) {
+internal/incidents/incidents.go:27:func CanPromoteToCase(status string) bool {
+internal/incidents/incidents.go:31:func NextIncidentStatus(current, command string) (string, error) {
+internal/incidents/incidents.go:49:func RecommendedActionForIncident(compositeRisk, confidence float64, trustState string, recurrence float64, suppressed bool) string {
+internal/incidents/incidents.go:65:func RankReasonForIncident(compositeRisk, escalation, confidence float64, trustState string, recurrence float64, openSLA bool) string {
+internal/incidents/incidents.go:81:func SafetyLevelForIncident(compositeRisk, dqPenalty float64) string {
+internal/incidents/incidents.go:97:func TrustLabelForIncident(trustState string, confidence float64) string {
+internal/kafka/kafka.go:12:func New(brokers []string, group string, topics ...string) (*kgo.Client, error) {
+internal/kafka/kafka.go:20:func ProduceJSON(ctx context.Context, c *kgo.Client, topic, key string, v any, headers ...kgo.RecordHeader) error {
+internal/kafka/kafka.go:41:func shouldRetryProduceError(err error) bool {
+internal/replay/jobs.go:10:func markReplayJobRunning(ctx context.Context, db *pgxpool.Pool, jobID string) error {
+internal/replay/jobs.go:14:func markReplayJobFailed(ctx context.Context, db *pgxpool.Pool, jobID, msg string) error {
+internal/replay/jobs.go:18:func markReplayJobCompleted(ctx context.Context, db *pgxpool.Pool, jobID string) error {
+internal/replay/jobs.go:23:func loadReplayJob(ctx context.Context, db *pgxpool.Pool, jobID string) (Job, error) {
+internal/replay/jobs.go:29:func loadRawTicks(ctx context.Context, db *pgxpool.Pool, s, e time.Time) ([]Tick, error) {
+internal/kafka/kafka_test.go:8:func TestShouldRetryProduceError(t *testing.T) {
+internal/replay/runner_scoring_test.go:5:func TestReplayScoreAndSeverityBounds(t *testing.T) {
+internal/replay/runner_scoring_test.go:20:func TestReplayScoreAndSeverityMissingBaseline(t *testing.T) {
+internal/replay/runner_test.go:8:func TestSortTicksOrdersByEventAndSequence(t *testing.T) {
+internal/replay/runner.go:14:func Run(ctx context.Context, db *pgxpool.Pool, jobID string) error {
+internal/replay/runner.go:44:func sortTicks(ticks []Tick) {
+internal/replay/runner.go:53:func recomputePipeline(ctx context.Context, db *pgxpool.Pool, job Job, ticks []Tick) (Result, error) {
+internal/replay/runner.go:77:func replayScoreAndSeverity(prevPrice, price float64) (float64, string) {
+internal/replay/runner.go:95:func persistReplayResult(ctx context.Context, db *pgxpool.Pool, job Job, result Result) error {
+internal/replay/runner.go:106:func buildReplayDiffSummary(ctx context.Context, db *pgxpool.Pool, job Job, result Result) (DiffSummary, error) {
+internal/metrics/metrics_test.go:10:func TestHandler(t *testing.T) {
+internal/metrics/metrics.go:8:func Handler(w http.ResponseWriter, _ *http.Request) {
+internal/logic/logic.go:5:func FeatureLogReturn(price float64) float64 { return math.Log(price / 100.0) }
+internal/logic/logic.go:6:func Severity(score float64) string {
+internal/logic/logic.go:27:func Transition(s ModelState, evt string) ModelState {
+internal/logic/logic_test.go:5:func TestSeverity(t *testing.T) {
+internal/logic/logic_test.go:10:func TestState(t *testing.T) {
+internal/logic/logic_test.go:15:func TestFeature(t *testing.T) {
+internal/httpx/httpx.go:8:func JSON(w http.ResponseWriter, code int, v any) {

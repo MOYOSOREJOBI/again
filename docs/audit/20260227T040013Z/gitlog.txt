@@ -1,0 +1,20 @@
+469512d Add seed-status debug endpoint and deterministic smoke/seed tooling
+5b5d140 Add tests for healthcheck, metrics, and simulator probe addr
+1c0f3f4 Harden service root/healthcheck behavior for simulator and distroless path
+be113ec Improve service health endpoints and compose observability wiring
+b01ac67 Merge pull request #34 from MOYOSOREJOBI/codex/validate-docker-compose-setup-1a8aim
+342b127 Add one-command local bootstrap runbook and script
+9735857 Merge pull request #33 from MOYOSOREJOBI/codex/validate-docker-compose-setup
+b734351 Fix migrations for Timescale compatibility and extension race
+b7ed77b Merge pull request #32 from MOYOSOREJOBI/codex/implement-missing-features-for-sentinel
+31c9f18 Fix corrupted query/governance filter and rate-limit wiring
+62f2988 Merge pull request #31 from MOYOSOREJOBI/codex/complete-missing-truth-layers-in-sentinel-1gkbu7
+2b363dc Merge branch 'NEWMAIN' into codex/complete-missing-truth-layers-in-sentinel-1gkbu7
+d272e52 Fix executive custom window and replay summary mapping
+42fbaf7 Merge pull request #30 from MOYOSOREJOBI/codex/complete-missing-truth-layers-in-sentinel-3rycjl
+d4b7f25 Merge branch 'NEWMAIN' into codex/complete-missing-truth-layers-in-sentinel-3rycjl
+540eeb4 Harden custom time-window SQL filtering
+1787c2e Merge pull request #29 from MOYOSOREJOBI/codex/complete-missing-truth-layers-in-sentinel-wdvsek
+4356b02 Merge branch 'NEWMAIN' into codex/complete-missing-truth-layers-in-sentinel-wdvsek
+5aebf40 Harden governance rate-limit identity keys
+10c30ab Merge pull request #28 from MOYOSOREJOBI/codex/complete-missing-truth-layers-in-sentinel-npz5w4
