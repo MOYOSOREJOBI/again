@@ -37,12 +37,43 @@ running = True
 kafka_ready = False
 model_bundle: dict | None = None
 model_loaded = False
+model_lock = threading.RLock()
+last_model_refresh = 0.0
+
+
+def _active_model_paths() -> tuple[str, str]:
+    active_cfg_path = os.getenv("ACTIVE_MODELS_PATH", "")
+    if active_cfg_path:
+        try:
+            with open(active_cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            anomaly_path = str(cfg.get("anomaly_model_path", "")).strip()
+            escalation_path = str(cfg.get("escalation_model_path", "")).strip()
+            if anomaly_path or escalation_path:
+                return anomaly_path, escalation_path
+        except Exception:
+            logger.warning("failed to load active model config; using env model paths", exc_info=True)
+    return os.getenv("ANOMALY_MODEL_PATH", ""), os.getenv("ESCALATION_MODEL_PATH", "")
 
 
 def load_models() -> dict:
-    anomaly = load_pickle_model(os.getenv("ANOMALY_MODEL_PATH", ""), "anomaly_fallback_v1")
-    escalation = load_pickle_model(os.getenv("ESCALATION_MODEL_PATH", ""), "escalation_fallback_v1")
+    anomaly_path, escalation_path = _active_model_paths()
+    anomaly = load_pickle_model(anomaly_path, "anomaly_fallback_v1")
+    escalation = load_pickle_model(escalation_path, "escalation_fallback_v1")
     return {"anomaly": anomaly, "escalation": escalation}
+
+
+def refresh_models_if_due(force: bool = False) -> dict:
+    global model_bundle, model_loaded, last_model_refresh
+    now = time.time()
+    interval_s = float(os.getenv("MODEL_RELOAD_INTERVAL_SECONDS", "30"))
+    with model_lock:
+        if not force and model_bundle is not None and (now-last_model_refresh) < max(interval_s, 1.0):
+            return model_bundle
+        model_bundle = load_models()
+        model_loaded = model_bundle is not None
+        last_model_refresh = now
+        return model_bundle
 
 
 def build_output(msg: dict, models: dict | None = None) -> dict:
@@ -98,8 +129,10 @@ def healthz():
 
 @app.get('/readyz')
 def readyz():
+    bundle = refresh_models_if_due()
     ready = kafka_ready and model_loaded
-    return (jsonify({'ready': ready, 'fallback_mode': True if not model_bundle else (model_bundle['anomaly'].degraded or model_bundle['escalation'].degraded)}), 200 if ready else 503)
+    fallback_mode = True if not bundle else (bundle['anomaly'].degraded or bundle['escalation'].degraded)
+    return (jsonify({'ready': ready, 'fallback_mode': fallback_mode, 'model_version': f"{bundle['anomaly'].version},{bundle['escalation'].version}"}), 200 if ready else 503)
 
 
 @app.get('/metrics')
@@ -108,9 +141,8 @@ def metrics():
 
 
 def run():
-    global kafka_ready, model_bundle, model_loaded
-    model_bundle = load_models()
-    model_loaded = model_bundle is not None
+    global kafka_ready
+    refresh_models_if_due(force=True)
     while running:
         try:
             consumer = KafkaConsumer(CONSUMER_TOPIC, bootstrap_servers=[BROKER], value_deserializer=lambda v: json.loads(v.decode()), consumer_timeout_ms=3000)
@@ -121,8 +153,9 @@ def run():
                 if not running:
                     break
                 try:
+                    current_models = refresh_models_if_due()
                     MESSAGES_CONSUMED.inc()
-                    out = build_output(msg.value, model_bundle)
+                    out = build_output(msg.value, current_models)
                     producer.send(PRODUCER_TOPIC, out)
                     producer.flush()
                     MESSAGES_PRODUCED.inc()

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,10 +50,51 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.CORS)
+	r.Use(middleware.RequireCSRFFunc(func(r *http.Request) (string, bool) {
+		claims, ok := authn(r, pub)
+		if !ok {
+			return "", false
+		}
+		return claims.Subject, true
+	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	r.Get("/readyz", readinessHandler(pool))
+	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
+		claims, ok := authn(r, pub)
+		if !ok || !rbac.Allowed(claims.Role, "read") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		rows, err := pool.Query(ctx, `SELECT model_name,model_version,artifact_hash,artifact_path,feature_set_version,coalesce(calibration_version,''),deployed_at FROM model_deployments WHERE status='deployed' ORDER BY deployed_at DESC NULLS LAST`)
+		if err != nil {
+			logger.Error("load active models failed", map[string]any{"error": err.Error()})
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+		out := map[string]any{"models": []map[string]any{}}
+		models := []map[string]any{}
+		for rows.Next() {
+			var name, version, artifactHash, artifactPath, featureSetVersion, calibrationVersion string
+			var deployedAt any
+			if err := rows.Scan(&name, &version, &artifactHash, &artifactPath, &featureSetVersion, &calibrationVersion, &deployedAt); err != nil {
+				continue
+			}
+			models = append(models, map[string]any{
+				"model_name":          name,
+				"model_version":       version,
+				"artifact_hash":       artifactHash,
+				"artifact_path":       artifactPath,
+				"feature_set_version": featureSetVersion,
+				"calibration_version": calibrationVersion,
+				"deployed_at":         deployedAt,
+			})
+		}
+		out["models"] = models
+		httpx.JSON(w, http.StatusOK, out)
+	})
 
-	r.With(middleware.RateLimit(func(r *http.Request) string { return "gov:" + r.RemoteAddr }, 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("gov", pub), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -78,11 +120,11 @@ func main() {
 		if err := audit.Append(ctx, pool, claims.Subject, "model.deploy", modelName+":"+version); err != nil {
 			logger.Error("audit append failed", map[string]any{"error": err.Error()})
 		}
-		cache.InvalidateByPrefixes(ctx, "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+		cache.InvalidateByPrefixes(ctx, cache.ReadModelPrefixes()...)
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	r.With(middleware.RateLimit(func(r *http.Request) string { return "replay:" + r.RemoteAddr }, 5, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow", pub), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -93,6 +135,7 @@ func main() {
 			End               time.Time `json:"end"`
 			ModelVersion      string    `json:"model_version"`
 			FeatureSetVersion string    `json:"feature_set_version"`
+			ReplayMode        string    `json:"replay_mode"`
 		}
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
 		if req.Start.IsZero() {
@@ -107,8 +150,9 @@ func main() {
 		if req.FeatureSetVersion == "" {
 			req.FeatureSetVersion = "v2"
 		}
+		req.ReplayMode = normalizeReplayMode(req.ReplayMode)
 		var id string
-		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,'recompute','wm_v1',5000,$4,$5) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
+		if err := pool.QueryRow(ctx, `INSERT INTO replay_jobs(requested_by,status,time_window_start,time_window_end,replay_mode,watermark_policy_id,allowed_lateness_ms,model_version,feature_set_version) VALUES($1,'queued',$2,$3,$4,'wm_v1',5000,$5,$6) RETURNING id::text`, claims.Subject, req.Start, req.End, req.ReplayMode, req.ModelVersion, req.FeatureSetVersion).Scan(&id); err != nil {
 			logger.Error("start replay failed", map[string]any{"error": err.Error()})
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -118,9 +162,9 @@ func main() {
 		}
 		go func(id string) {
 			_ = replay.Run(context.Background(), pool, id)
-			cache.InvalidateByPrefixes(context.Background(), "queue:v1:", "cc:v1:", "trust:v1:", "worldmap:v1:", "exec:v1:")
+			cache.InvalidateByPrefixes(context.Background(), cache.ReadModelPrefixes()...)
 		}(id)
-		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued"})
+		httpx.JSON(w, http.StatusAccepted, map[string]any{"id": id, "status": "queued", "replay_mode": req.ReplayMode})
 	})
 
 	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +235,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -218,3 +262,33 @@ func readinessHandler(p pinger) http.HandlerFunc {
 }
 
 var errNotReady = errors.New("not ready")
+
+func rateLimitSubjectKey(prefix string, pub *rsa.PublicKey) func(*http.Request) string {
+	return func(r *http.Request) string {
+		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
+			token := strings.TrimSpace(strings.TrimPrefix(authz, "Bearer "))
+			if token != "" {
+				if claims, err := auth.Parse(token, pub); err == nil {
+					return prefix + ":sub:" + claims.Subject
+				}
+				return prefix + ":authz:" + token
+			}
+		}
+		if c, err := r.Cookie("sentinel_token"); err == nil && c.Value != "" {
+			if claims, err := auth.Parse(c.Value, pub); err == nil {
+				return prefix + ":sub:" + claims.Subject
+			}
+			return prefix + ":cookie:" + c.Value
+		}
+		return prefix + ":ip:" + r.RemoteAddr
+	}
+}
+
+func normalizeReplayMode(in string) string {
+	switch in {
+	case "as_scored", "recompute":
+		return in
+	default:
+		return "recompute"
+	}
+}
