@@ -19,14 +19,21 @@ import (
 	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/metrics"
 	"sentinel/internal/middleware"
 	"sentinel/internal/rbac"
 	"sentinel/internal/replay"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8084)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -58,6 +65,9 @@ func main() {
 		return claims.Subject, true
 	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"service": "governance", "version": "dev", "links": []string{"/healthz", "/readyz", "/metrics", "/docs"}})
+	})
 	r.Get("/readyz", readinessHandler(pool))
 	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
@@ -94,6 +104,7 @@ func main() {
 		httpx.JSON(w, http.StatusOK, out)
 	})
 
+	r.Get("/metrics", metrics.Handler)
 	r.With(middleware.RateLimit(rateLimitSubjectKey("gov", pub), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
