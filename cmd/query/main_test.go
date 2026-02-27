@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -77,5 +80,47 @@ func TestBuildExecutiveIndustryWhere_CustomSwapsInvertedRange(t *testing.T) {
 	}
 	if from.After(to) {
 		t.Fatalf("expected normalized range: from=%s to=%s", from, to)
+	}
+}
+
+func TestSeedStatusHandlerReturnsCountsFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/debug/seed-status", nil)
+	rr := httptest.NewRecorder()
+
+	counts := map[string]int64{
+		"raw_ticks": 11,
+		"candles":   12,
+		"features":  13,
+		"scores":    14,
+		"alerts":    15,
+		"incidents": 16,
+		"cases":     17,
+	}
+	h := seedStatusHandler(func(_ context.Context, query string) (int64, error) {
+		for _, c := range seedStatusChecks {
+			if c.Query == query {
+				return counts[c.Name], nil
+			}
+		}
+		return 0, nil
+	})
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	var got map[string]int64
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	for key, want := range counts {
+		v, ok := got[key]
+		if !ok {
+			t.Fatalf("missing key %q in %v", key, got)
+		}
+		if v != want {
+			t.Fatalf("expected %s=%d, got %d", key, want, v)
+		}
 	}
 }

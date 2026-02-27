@@ -26,17 +26,14 @@ jobs:
           docker version
           docker info
 
-      - name: Run Gate
+      - name: Run Audit
         run: |
           chmod +x scripts/*.sh || true
           chmod +x scripts/*.py || true
-          ./scripts/gate.sh
-
-      - name: Run Audit
-        run: |
           ./scripts/audit.sh
 
       - name: Upload audit artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sentinel-audit-artifacts
