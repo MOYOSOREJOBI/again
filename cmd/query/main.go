@@ -33,6 +33,36 @@ const (
 	ttlExecutive = 10 * time.Second
 )
 
+type seedStatusCheck struct {
+	Name  string
+	Query string
+}
+
+var seedStatusChecks = []seedStatusCheck{
+	{Name: "raw_ticks", Query: "SELECT count(*) FROM raw_ticks"},
+	{Name: "candles", Query: "SELECT count(*) FROM candles"},
+	{Name: "features", Query: "SELECT count(*) FROM features"},
+	{Name: "scores", Query: "SELECT count(*) FROM scores"},
+	{Name: "alerts", Query: "SELECT count(*) FROM alerts"},
+	{Name: "incidents", Query: "SELECT count(*) FROM incidents"},
+	{Name: "cases", Query: "SELECT count(*) FROM cases"},
+}
+
+func seedStatusHandler(counter func(context.Context, string) (int64, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out := map[string]int64{}
+		for _, c := range seedStatusChecks {
+			n, err := counter(r.Context(), c.Query)
+			if err != nil {
+				http.Error(w, "internal", http.StatusInternalServerError)
+				return
+			}
+			out[c.Name] = n
+		}
+		httpx.JSON(w, http.StatusOK, out)
+	}
+}
+
 type filters struct {
 	Window      string
 	From        time.Time
@@ -85,31 +115,13 @@ func main() {
 	})
 	r.Get("/metrics", metrics.Handler)
 
-	r.Get("/debug/seed-status", func(w http.ResponseWriter, r *http.Request) {
-		type row struct {
-			Name  string
-			Query string
+	r.Get("/debug/seed-status", seedStatusHandler(func(ctx context.Context, query string) (int64, error) {
+		var n int64
+		if err := pool.QueryRow(ctx, query).Scan(&n); err != nil {
+			return 0, err
 		}
-		checks := []row{
-			{Name: "raw_ticks", Query: "SELECT count(*) FROM raw_ticks"},
-			{Name: "candles", Query: "SELECT count(*) FROM candles"},
-			{Name: "features", Query: "SELECT count(*) FROM features"},
-			{Name: "scores", Query: "SELECT count(*) FROM scores"},
-			{Name: "alerts", Query: "SELECT count(*) FROM alerts"},
-			{Name: "incidents", Query: "SELECT count(*) FROM incidents"},
-			{Name: "cases", Query: "SELECT count(*) FROM cases"},
-		}
-		out := map[string]int64{}
-		for _, c := range checks {
-			var n int64
-			if err := pool.QueryRow(r.Context(), c.Query).Scan(&n); err != nil {
-				http.Error(w, "internal", http.StatusInternalServerError)
-				return
-			}
-			out[c.Name] = n
-		}
-		httpx.JSON(w, http.StatusOK, out)
-	})
+		return n, nil
+	}))
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(requireRole(pub, "read"))
