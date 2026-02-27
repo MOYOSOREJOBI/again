@@ -1,5 +1,15 @@
 -- +goose Up
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+DO $$
+BEGIN
+  PERFORM pg_advisory_lock(947531);
+  BEGIN
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+  EXCEPTION
+    WHEN duplicate_object THEN
+      NULL;
+  END;
+  PERFORM pg_advisory_unlock(947531);
+END $$;
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,

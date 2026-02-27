@@ -58,6 +58,15 @@ Routes captured:
 
 ## Local demo flow (reviewer runbook)
 
+Quick one-command bootstrap (macOS/Linux):
+
+```bash
+./scripts/local-bootstrap.sh ~/Desktop/fast
+# optional: MODE=fast ./scripts/local-bootstrap.sh ~/Desktop/fast
+```
+
+Manual flow:
+
 1. `make dev-keys`
 2. `make demo`
 3. Sign in (`admin@sentinel.local` / `Sentinel#123`)
