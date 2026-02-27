@@ -92,9 +92,9 @@ GF_PASS="${GF_PASS:-admin}"
 curl -fsS "http://${GF_USER}:${GF_PASS}@localhost:3001/api/health" | tee "${LOG_DIR}/grafana_health.json" >/dev/null
 # Confirm dashboards exist (search API):
 curl -fsS "http://${GF_USER}:${GF_PASS}@localhost:3001/api/search?type=dash-db" | tee "${LOG_DIR}/grafana_search.json" >/dev/null
-python3 - <<'PY'
-import json
-d=json.load(open("docs/audit/_latest/logs/grafana_search.json"))
+python3 - "${LOG_DIR}/grafana_search.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
 assert isinstance(d,list) and len(d)>0, "no dashboards found"
 PY
 touch "${PROOF_DIR}/S5_grafana_provisioned.ok"
