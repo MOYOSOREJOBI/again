@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
 	"sync"
 	"time"
+
+	"sentinel/internal/rediskv"
 )
 
 type csrfEntry struct {
@@ -14,6 +17,7 @@ type csrfEntry struct {
 }
 
 var csrfStore sync.Map
+var csrfRedis = rediskv.NewFromEnv()
 
 func NewCSRFToken() (string, error) {
 	b := make([]byte, 32)
@@ -25,11 +29,24 @@ func NewCSRFToken() (string, error) {
 
 func BindCSRF(subject, token string, ttl time.Duration) {
 	csrfStore.Store(subject, csrfEntry{Token: token, Expiry: time.Now().Add(ttl)})
+	if csrfRedis != nil && csrfRedis.Enabled() {
+		_ = csrfRedis.SetEX(context.Background(), "csrf:"+subject, token, ttl)
+	}
 }
 
-func ClearCSRF(subject string) { csrfStore.Delete(subject) }
+func ClearCSRF(subject string) {
+	csrfStore.Delete(subject)
+	if csrfRedis != nil && csrfRedis.Enabled() {
+		_ = csrfRedis.Del(context.Background(), "csrf:"+subject)
+	}
+}
 
 func ValidCSRF(subject, token string) bool {
+	if csrfRedis != nil && csrfRedis.Enabled() {
+		if v, ok, err := csrfRedis.Get(context.Background(), "csrf:"+subject); err == nil && ok {
+			return token != "" && v == token
+		}
+	}
 	v, ok := csrfStore.Load(subject)
 	if !ok {
 		return false
