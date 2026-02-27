@@ -7,11 +7,14 @@ make lint
 make test
 
 echo "=== GATE: Web install/build ==="
-( cd web && npm ci && npm run build )
+( cd web && npm ci && npm run check:i18n && npm run build )
 
 echo "=== GATE: Playwright (local if available, else Docker) ==="
 if (cd web && npx playwright --version >/dev/null 2>&1); then
-  ( cd web && npx playwright test )
+  if ! ( cd web && npx playwright test ); then
+    echo "Local Playwright execution failed; trying Docker runner."
+    ./scripts/playwright-docker.sh
+  fi
 else
   echo "Local Playwright not available; using Docker runner."
   ./scripts/playwright-docker.sh

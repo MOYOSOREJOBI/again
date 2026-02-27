@@ -1,14 +1,18 @@
 package replay
 
-import "testing"
+import (
+	"testing"
+
+	pipelinescoring "sentinel/internal/pipeline/scoring"
+)
 
 func TestReplayScoreAndSeverityBounds(t *testing.T) {
-	s, sev := replayScoreAndSeverity(100, 100)
+	s, sev := pipelinescoring.ScoreAndSeverity(100, 100)
 	if s != 0 || sev != "stable" {
 		t.Fatalf("expected stable zero, got %f %s", s, sev)
 	}
 
-	s, sev = replayScoreAndSeverity(100, 120)
+	s, sev = pipelinescoring.ScoreAndSeverity(100, 120)
 	if s <= 0 || s > 1 {
 		t.Fatalf("score out of bounds: %f", s)
 	}
@@ -18,7 +22,7 @@ func TestReplayScoreAndSeverityBounds(t *testing.T) {
 }
 
 func TestReplayScoreAndSeverityMissingBaseline(t *testing.T) {
-	s, sev := replayScoreAndSeverity(0, 101)
+	s, sev := pipelinescoring.ScoreAndSeverity(0, 101)
 	if s != 0 || sev != "stable" {
 		t.Fatalf("expected stable for missing baseline, got %f %s", s, sev)
 	}
