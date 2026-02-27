@@ -9,7 +9,11 @@ mkdir -p "${LOGS}"
 run_and_log() {
   local name="$1"; shift
   echo "$ $*" | tee "${LOGS}/${name}.txt"
+  set +e
   "$@" 2>&1 | tee -a "${LOGS}/${name}.txt"
+  local ec=${PIPESTATUS[0]}
+  set -e
+  return ${ec}
 }
 
 doctor_ok=0
@@ -18,11 +22,11 @@ test_ok=0
 demo_ok=0
 gate_ok=0
 
-run_and_log make_doctor make doctor && doctor_ok=1
-run_and_log make_lint make lint && lint_ok=1
-run_and_log make_test make test && test_ok=1
-run_and_log make_demo make demo && demo_ok=1
-run_and_log gate ./scripts/gate.sh && gate_ok=1
+if run_and_log make_doctor make doctor; then doctor_ok=1; fi
+if run_and_log make_lint make lint; then lint_ok=1; fi
+if run_and_log make_test make test; then test_ok=1; fi
+if run_and_log make_demo make demo; then demo_ok=1; fi
+if run_and_log gate ./scripts/gate.sh; then gate_ok=1; fi
 
 # Rubric mapping.
 s1=$([ "$doctor_ok" -eq 1 ] && [ "$lint_ok" -eq 1 ] && [ "$test_ok" -eq 1 ] && [ "$demo_ok" -eq 1 ] && echo 1 || echo 0)
@@ -83,5 +87,6 @@ MD
 echo "COMPLETION: ${score}%"
 echo "STATUS: ${status}"
 echo "RUNTIME COVERAGE: ${runtime}"
+echo "COMPLETION: ${score}% STATUS: ${status} RUNTIME COVERAGE: ${runtime}"
 
 [ "${status}" = "PASS" ]
