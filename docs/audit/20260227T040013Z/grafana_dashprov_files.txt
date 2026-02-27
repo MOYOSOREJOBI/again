@@ -1,0 +1,4 @@
+total 12
+drwxr-xr-x 2 root root 4096 Feb 27 03:37 .
+drwxr-xr-x 4 root root 4096 Feb 27 03:37 ..
+-rw-r--r-- 1 root root  230 Feb 27 03:37 dashboards.yml
