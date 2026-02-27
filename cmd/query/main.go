@@ -85,6 +85,32 @@ func main() {
 	})
 	r.Get("/metrics", metrics.Handler)
 
+	r.Get("/debug/seed-status", func(w http.ResponseWriter, r *http.Request) {
+		type row struct {
+			Name  string
+			Query string
+		}
+		checks := []row{
+			{Name: "raw_ticks", Query: "SELECT count(*) FROM raw_ticks"},
+			{Name: "candles", Query: "SELECT count(*) FROM candles"},
+			{Name: "features", Query: "SELECT count(*) FROM features"},
+			{Name: "scores", Query: "SELECT count(*) FROM scores"},
+			{Name: "alerts", Query: "SELECT count(*) FROM alerts"},
+			{Name: "incidents", Query: "SELECT count(*) FROM incidents"},
+			{Name: "cases", Query: "SELECT count(*) FROM cases"},
+		}
+		out := map[string]int64{}
+		for _, c := range checks {
+			var n int64
+			if err := pool.QueryRow(r.Context(), c.Query).Scan(&n); err != nil {
+				http.Error(w, "internal", http.StatusInternalServerError)
+				return
+			}
+			out[c.Name] = n
+		}
+		httpx.JSON(w, http.StatusOK, out)
+	})
+
 	r.Group(func(pr chi.Router) {
 		pr.Use(requireRole(pub, "read"))
 		pr.Get("/queue", func(w http.ResponseWriter, r *http.Request) {
