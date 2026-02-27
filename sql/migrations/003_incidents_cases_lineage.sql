@@ -96,14 +96,7 @@ CREATE TABLE IF NOT EXISTS instrument_metadata (
 );
 
 ALTER TABLE alerts ADD COLUMN IF NOT EXISTS incident_id BIGINT;
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints WHERE table_name='alerts' AND constraint_name='alerts_score_id_fkey'
-  ) THEN
-    ALTER TABLE alerts ADD CONSTRAINT alerts_score_id_fkey FOREIGN KEY (score_id) REFERENCES scores(id) ON DELETE SET NULL;
-  END IF;
-END $$;
+CREATE INDEX IF NOT EXISTS alerts_score_id_idx ON alerts (score_id);
 ALTER TABLE alerts DROP CONSTRAINT IF EXISTS alerts_incident_id_fkey;
 ALTER TABLE alerts ADD CONSTRAINT alerts_incident_id_fkey FOREIGN KEY (incident_id) REFERENCES incidents(id) ON DELETE SET NULL;
 
@@ -113,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_instrument_metadata_geo ON instrument_metadata(co
 
 -- +goose Down
 DROP INDEX IF EXISTS idx_instrument_metadata_geo;
+DROP INDEX IF EXISTS alerts_score_id_idx;
 DROP INDEX IF EXISTS idx_incidents_symbol_time;
 DROP INDEX IF EXISTS idx_incidents_queue;
 ALTER TABLE alerts DROP CONSTRAINT IF EXISTS alerts_incident_id_fkey;
