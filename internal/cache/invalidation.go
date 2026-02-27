@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-func InvalidateByPrefixes(_ context.Context, prefixes ...string) {
+func InvalidateByPrefixes(ctx context.Context, prefixes ...string) {
 	mem.Range(func(key, _ any) bool {
 		ks, ok := key.(string)
 		if !ok {
@@ -19,4 +19,9 @@ func InvalidateByPrefixes(_ context.Context, prefixes ...string) {
 		}
 		return true
 	})
+	if redisClient != nil && redisClient.Enabled() {
+		for _, p := range prefixes {
+			_ = redisClient.Del(ctx, p+"*")
+		}
+	}
 }

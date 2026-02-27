@@ -1,0 +1,30 @@
+$ make test
+go test -race -count=1 ./...
+?   	sentinel/cmd/aggregator	[no test files]
+ok  	sentinel/cmd/alerts	1.078s
+ok  	sentinel/cmd/features	1.070s
+ok  	sentinel/cmd/gateway-api	1.076s
+ok  	sentinel/cmd/governance	1.322s
+ok  	sentinel/cmd/query	1.064s
+ok  	sentinel/cmd/simulator	1.059s
+ok  	sentinel/internal/audit	1.059s
+ok  	sentinel/internal/auth	1.308s
+ok  	sentinel/internal/cache	1.395s
+ok  	sentinel/internal/config	1.060s
+?   	sentinel/internal/contracts	[no test files]
+?   	sentinel/internal/db	[no test files]
+ok  	sentinel/internal/healthcheck	1.078s
+?   	sentinel/internal/httpx	[no test files]
+ok  	sentinel/internal/incidents	1.069s
+ok  	sentinel/internal/kafka	1.067s
+?   	sentinel/internal/logging	[no test files]
+ok  	sentinel/internal/logic	1.052s
+ok  	sentinel/internal/marketmath	1.077s
+ok  	sentinel/internal/metrics	1.061s
+ok  	sentinel/internal/middleware	1.093s
+ok  	sentinel/internal/pipeline/scoring	1.053s
+ok  	sentinel/internal/query	1.067s
+ok  	sentinel/internal/rbac	1.057s
+?   	sentinel/internal/rediskv	[no test files]
+ok  	sentinel/internal/replay	1.058s
+?   	sentinel/scripts	[no test files]

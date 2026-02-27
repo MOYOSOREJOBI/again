@@ -1,0 +1,7 @@
+COMPLETION: 48%
+STATUS: FAIL
+RUNTIME COVERAGE: NONE
+
+S1=1 S2=0 S3=0 S4=0 S5=0 S6=0 S7=1 S8=1 S9=1 S10=1
+
+Primary evidence: logs/gate.txt
