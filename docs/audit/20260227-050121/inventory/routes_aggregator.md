@@ -1,0 +1,8 @@
+# Routes for aggregator
+Source: cmd/aggregator/main.go
+
+## Route registrations
+64:	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+65:	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+69:	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+86:	mux.HandleFunc("/metrics", metrics.Handler)

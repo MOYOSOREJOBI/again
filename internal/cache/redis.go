@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+
+	"sentinel/internal/rediskv"
 )
 
 type entry struct {
@@ -13,9 +15,18 @@ type entry struct {
 }
 
 var mem sync.Map
+var redisClient = rediskv.NewFromEnv()
 
-func GetOrLoadJSON[T any](_ context.Context, key string, ttl time.Duration, loader func() (T, error)) (T, error) {
+func GetOrLoadJSON[T any](ctx context.Context, key string, ttl time.Duration, loader func() (T, error)) (T, error) {
 	var zero T
+	if redisClient != nil && redisClient.Enabled() {
+		if raw, ok, err := redisClient.Get(ctx, key); err == nil && ok {
+			var out T
+			if json.Unmarshal([]byte(raw), &out) == nil {
+				return out, nil
+			}
+		}
+	}
 	if v, ok := mem.Load(key); ok {
 		e := v.(entry)
 		if time.Now().Before(e.exp) {
@@ -31,6 +42,9 @@ func GetOrLoadJSON[T any](_ context.Context, key string, ttl time.Duration, load
 	}
 	if b, err := json.Marshal(out); err == nil {
 		mem.Store(key, entry{b: b, exp: time.Now().Add(ttl)})
+		if redisClient != nil && redisClient.Enabled() {
+			_ = redisClient.SetEX(ctx, key, string(b), ttl)
+		}
 	}
 	return out, nil
 }

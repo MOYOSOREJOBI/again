@@ -1,0 +1,182 @@
+# Feature location evidence
+
+## Globe
+web/components/RiskGlobe.tsx:5:export function RiskGlobe({ data, onSelect }: { data: CountryAgg[]; onSelect: (iso2: string) => void }) {
+web/components/RiskGlobe.tsx:7:    <h3>Risk globe</h3>
+web/components/RiskGlobe.tsx:9:      <div style={{ padding: 12, color: '#e2e8f0' }}>Interactive globe placeholder (offline-safe build) — click a country:</div>
+web/components/WorldRiskMap.tsx:31:export default function WorldRiskMap({ data, rows, selectedCountryCode, selectedRegion, onSelectCountry, onSelectRegion }: Props) {
+web/app/command-center/page.tsx:6:import WorldRiskMap from '../../components/WorldRiskMap'
+web/app/command-center/page.tsx:12:const RiskGlobe = dynamic(() => import('../../components/RiskGlobe').then(m => m.RiskGlobe), { ssr: false })
+web/app/command-center/page.tsx:21:  const globeData = useMemo(() => (map?.countries || []).map((c: any) => ({ iso2: (c.countryCode || c.country_code || 'XX').toUpperCase(), name: c.countryName || c.country_name || 'Unknown', risk: Number(c.avgCompositeRisk || c.avg_risk || 0), highRisk: Number(c.incidentCount || c.incident_count || 0), p95: Number(c.avgCompositeRisk || c.avg_risk || 0) })), [map])
+web/app/command-center/page.tsx:27:    <RiskGlobe data={globeData} onSelect={(iso2) => setFilters((f) => ({ ...f, countryCode: iso2 }))} />
+web/app/command-center/page.tsx:28:    <WorldRiskMap data={map.countries || []} selectedCountryCode={filters.countryCode} onSelectCountry={(c) => setFilters((f) => ({ ...f, countryCode: c }))} />
+
+## Charts
+web/components/CandleRiskPanel.tsx:5:export function CandleRiskPanel({ points }: { points: Array<{ t: string; risk: number }> }) {
+web/app/command-center/page.tsx:7:import { CandleRiskPanel } from '../../components/CandleRiskPanel'
+web/app/command-center/page.tsx:26:    <CandleRiskPanel points={points} />
+
+## SSE
+web/app/api/sse/alerts/route.ts:14:      'Content-Type': 'text/event-stream',
+web/e2e/sentinel.spec.ts:23:  const res = await request.get('/api/sse/alerts')
+web/lib/stream.ts:4:  const es = new EventSource(path, { withCredentials: true });
+web/lib/stream.ts:13:  return sub("/api/sse/alerts", onPatch, onError);
+web/lib/stream.ts:16:  return sub("/api/sse/alerts", onPatch, onError);
+web/lib/stream.ts:19:  return sub("/api/sse/alerts", onPatch, onError);
+web/lib/useSSE.ts:4:type SSEStatus = "connecting" | "open" | "closed" | "error";
+web/lib/useSSE.ts:5:export function useSSE<T>(url: string, onMessage: (data: T) => void) {
+web/lib/useSSE.ts:6:  const [status, setStatus] = useState<SSEStatus>("connecting");
+web/lib/useSSE.ts:7:  const esRef = useRef<EventSource | null>(null);
+web/lib/useSSE.ts:16:      const es = new EventSource(url, { withCredentials: true });
+
+## i18n + RTL
+web/messages/hi.json:9:  "glossary": "Glossary",
+web/messages/de.json:9:  "glossary": "Glossary",
+web/app/governance/page.tsx:8:  const [summary, setSummary] = useState<any>(null)
+web/app/governance/page.tsx:11:  useEffect(() => { api.governanceSummary().then(setSummary); api.me().then(setMe) }, [])
+web/app/governance/page.tsx:12:  if (!summary) return <AppShell title="Governance" subtitle="Admin control plane" filters={filters} setFilters={apply}><LoadingState /></AppShell>
+web/app/governance/page.tsx:14:    {me?.role !== 'admin' && <div className="empty-state">Governance controls are admin-only.</div>}
+web/app/governance/page.tsx:16:      <div className="card"><h3>Model Registry</h3>{(summary.modelLineage || []).map((m: any, i: number) => <div key={i} className="kv"><span>{m.model}</span><span>{m.version} ({m.state})</span></div>)}</div>
+web/app/governance/page.tsx:17:      <div className="card"><h3>Replay Jobs</h3>{(summary.replayJobs || []).map((j: any) => <div key={j.id} className="kv"><span>{j.id}</span><span>{j.status}</span></div>)}</div>
+web/app/governance/page.tsx:18:      <div className="card"><h3>Threshold Changes</h3><p>{(summary.thresholdChanges || []).length} changes</p></div>
+web/messages/zh-Hans.json:9:  "glossary": "Glossary",
+web/messages/es.json:9:  "glossary": "Glossary",
+web/messages/ha.json:9:  "glossary": "Glossary",
+web/messages/pt.json:9:  "glossary": "Glossary",
+web/app/case/page.tsx:22:      <div className="card">
+web/app/case/page.tsx:24:        {!cases.length ? <div className="empty-state">No cases yet. Promote an incident to start investigation.</div> : cases.map((c) => (
+web/app/case/page.tsx:32:      <div className="card">
+web/messages/fr.json:9:  "glossary": "Glossary",
+web/messages/ja.json:9:  "glossary": "Glossary",
+web/messages/ig.json:9:  "glossary": "Glossary",
+web/messages/en.json:9:  "glossary": "Glossary",
+web/messages/tr.json:9:  "glossary": "Glossary",
+web/messages/nl.json:9:  "glossary": "Glossary",
+web/messages/yo.json:9:  "glossary": "Glossary",
+web/app/case/[id]/page.tsx:7:export default function CasePage({ params }: { params: { id: string } }) {
+web/app/case/[id]/page.tsx:9:  const [summary, setSummary] = useState<any>(null)
+web/app/case/[id]/page.tsx:16:  const load = () => { api.caseDetail(params.id).then(setRow); api.case(params.id).then(setSummary) }
+web/app/case/[id]/page.tsx:17:  useEffect(() => { load(); api.me().then(setMe) }, [params.id])
+web/app/case/[id]/page.tsx:21:    <AppShell title={`Case ${params.id}`} subtitle="Governed investigation surface with evidence, notes, and disposition history." filters={filters} setFilters={apply}>
+web/app/case/[id]/page.tsx:22:      {!row?.id && !summary?.id ? <div className="empty-state">Case unavailable or not found.</div> : <>
+web/app/case/[id]/page.tsx:24:          <div className="card"><h3>Status</h3><p>{row?.status || summary?.status || 'investigating'}</p></div>
+web/app/case/[id]/page.tsx:25:          <div className="card"><h3>Owner</h3><p>{row?.owner || summary?.owner || 'Unassigned'}</p></div>
+web/app/case/[id]/page.tsx:26:          <div className="card"><h3>SLA</h3><p>{summary?.updated_at ? `Updated ${summary.updated_at}` : 'Awaiting analyst note'}</p></div>
+web/app/case/[id]/page.tsx:29:          <section className="card">
+web/app/case/[id]/page.tsx:31:            <p className="muted">Linked incident: {summary?.incident_id || row?.incident_id || '-'}</p>
+web/app/case/[id]/page.tsx:35:          <section className="card">
+web/app/case/[id]/page.tsx:38:              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="add note" />
+web/app/case/[id]/page.tsx:39:              <button onClick={async () => { await api.caseNote(params.id, note).catch(() => null); setNote(''); load() }}>Add note</button>
+web/app/case/[id]/page.tsx:40:              <button onClick={async () => { await api.caseEvidence(params.id, 'incident', String(row?.incident_id || summary?.incident_id || ''), { source: 'ui' }).catch(() => null); load() }}>Attach incident evidence</button>
+web/app/case/[id]/page.tsx:41:              <select value={status} onChange={(e) => setStatus(e.target.value)}><option>open</option><option>investigating</option><option>escalated</option><option>closed</option></select>
+web/app/case/[id]/page.tsx:42:              <button onClick={async () => { await api.caseStatus(params.id, status).catch(() => null); load() }}>Update status</button>
+web/app/case/[id]/page.tsx:43:              <input value={disposition} onChange={(e) => setDisposition(e.target.value)} placeholder="disposition reason" />
+web/app/case/[id]/page.tsx:44:              <button onClick={async () => { await api.caseDisposition(params.id, 'closed', disposition || 'resolved by analyst').catch(() => null); setDisposition(''); load() }}>Capture disposition</button>
+web/app/case/[id]/page.tsx:46:            {(row?.actions || []).length ? <ul>{row.actions.map((a: any) => <li key={a.id}>{a.created_at}: {a.actor} · {a.action}</li>)}</ul> : <div className="empty-state" style={{ marginTop: 10 }}>No activity timeline entries yet.</div>}
+web/messages/ru.json:9:  "glossary": "Glossary",
+web/messages/it.json:9:  "glossary": "Glossary",
+web/messages/ar.json:9:  "glossary": "Glossary",
+web/app/executive/page.tsx:7:  const [summary, setSummary] = useState<any>({})
+web/app/executive/page.tsx:9:  useEffect(() => { api.executiveSummary(filters).then(setSummary) }, [JSON.stringify(filters)])
+web/app/executive/page.tsx:10:  return <AppShell title="Executive Summary" subtitle="Plain-English current risk posture" filters={filters} setFilters={apply}>
+web/app/executive/page.tsx:11:    <div className="grid-3"><div className="card"><h3>Top 5 risks</h3><p>{(summary.topRisks || []).length}</p></div><div className="card"><h3>Country concentration</h3><p>{(summary.countryConcentration || []).length}</p></div><div className="card"><h3>Industry concentration</h3><p>{(summary.industryConcentration || []).length}</p></div></div>
+web/app/executive/page.tsx:12:    <section className="card"><h3>Risk memo</h3><p>{summary.riskMemo || 'No material change.'}</p></section>
+web/messages/sw.json:9:  "glossary": "Glossary",
+web/app/layout.tsx:4:  title: 'Sentinel Dashboard',
+web/app/page.tsx:34:      <section className="login-card">
+web/app/page.tsx:38:          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email" />
+web/app/page.tsx:39:          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" />
+web/lib/roles.ts:7:  | 'replay:start'
+web/lib/roles.ts:13:  analyst: new Set(['alerts:ack', 'replay:start']),
+web/lib/roles.ts:14:  admin: new Set(['alerts:ack', 'alerts:resolve', 'alerts:suppress', 'replay:start', 'audit:verify', 'models:deploy']),
+web/lib/stream.ts:6:    try { onPatch(JSON.parse((evt as MessageEvent).data)); } catch (err) { onError?.(err); }
+web/lib/useSSE.ts:28:        try { onMessage(JSON.parse(evt.data)); } catch { }
+web/app/replay/[job]/page.tsx:3:import { useParams } from 'next/navigation'
+web/app/replay/[job]/page.tsx:9:  const params = useParams<{ job: string }>()
+web/app/replay/[job]/page.tsx:12:  useEffect(() => { if (params?.job) api.replay(params.job).then(setJob) }, [params?.job])
+web/app/replay/[job]/page.tsx:13:  return <AppShell title={`Replay ${params?.job || ''}`} subtitle="Replay workspace">
+web/app/replay/[job]/page.tsx:15:      <div className="grid-3"><div className="card"><h3>Status</h3><p>{job.status}</p></div><div className="card"><h3>Provenance</h3><p>{job.modelVersion} / {job.featureSetVersion}</p></div><div className="card"><h3>Watermark</h3><p>{job.watermarkPolicy} / {job.allowedLatenessMs}ms</p></div></div>
+web/app/replay/[job]/page.tsx:16:      <div className="card"><p className="muted">metadata-first mode available when recompute artifacts are absent.</p><button onClick={() => setMode('as_scored')}>As Scored</button> <button onClick={() => setMode('recomputed')}>Recomputed</button><p>Mode: {mode}</p>{job.partial && <p className="muted">Partial replay; limitations: {(job.limitations || []).join(', ')}</p>}</div><div className="card"><h3>Deterministic timeline</h3><p>Synchronized summary lanes.</p></div>
+web/lib/api.ts:8:function readCSRFCookie() { if (typeof document === 'undefined') return ''; const m = document.cookie.split(';').map(v => v.trim()).find(v => v.startsWith('sentinel_csrf=')); return m ? decodeURIComponent(m.split('=')[1]) : '' }
+web/lib/api.ts:25:  governanceSummary: () => apiFetch(API_QUERY, '/governance/summary').catch(() => ({ modelLineage: [], replayJobs: [] })),
+web/lib/api.ts:26:  executiveSummary: (f: GlobalFilters = {}) => apiFetch(API_QUERY, `/executive-summary${filtersToQuery(f)}`).catch(() => ({})),
+web/lib/i18n.ts:1:export type Locale = 'en' | 'fr' | 'es' | 'pt' | 'it' | 'zh-Hans' | 'ja' | 'ar' | 'de' | 'sw' | 'yo' | 'ig' | 'ha' | 'tr' | 'ru' | 'nl' | 'hi'
+web/lib/i18n.ts:13:  glossary: 'Glossary',
+web/lib/i18n.ts:17:const dictionaries: Record<Locale, Dict> = {
+web/lib/i18n.ts:25:  ar: { ...base, commandCenter: 'مركز القيادة', queue: 'الطابور', cases: 'الحالات', trust: 'الثقة' },
+web/lib/i18n.ts:26:  de: { ...base, queue: 'Warteschlange' },
+web/lib/i18n.ts:37:const locales: Locale[] = ['en','fr','es','pt','it','zh-Hans','ja','ar','de','sw','yo','ig','ha','tr','ru','nl','hi']
+web/lib/i18n.ts:40:  const safe = (locales.includes(locale as Locale) ? locale : 'en') as Locale
+web/lib/i18n.ts:42:  document.documentElement.dir = safe === 'ar' ? 'rtl' : 'ltr'
+web/lib/i18n.ts:50:  return locales.includes(raw) ? raw : 'en'
+web/lib/i18n.ts:59:  return dictionaries[locale]?.[key] || fallback
+web/lib/i18n.ts:62:export function allLocales(): Locale[] { return locales }
+web/app/queue/page.tsx:18:      const arr = [...(prev || [])]
+web/app/queue/page.tsx:19:      const idx = arr.findIndex((r) => String(r.id) === String(patch.incident?.id))
+web/app/queue/page.tsx:20:      if (patch.type === 'delete' && idx >= 0) arr.splice(idx, 1)
+web/app/queue/page.tsx:22:        if (idx >= 0) arr[idx] = patch.incident
+web/app/queue/page.tsx:23:        else arr.push(patch.incident)
+web/app/queue/page.tsx:25:      return arr
+web/app/queue/page.tsx:32:    {rows === null ? <LoadingState label="Loading queue" /> : sorted.length === 0 ? <EmptyState message="Queue is clear for current filters." /> :
+web/app/queue/page.tsx:37:        <div className="card">{sorted.map((r) => <div key={r.id} className="queue-row"><div><strong>{r.symbol}</strong> <span className="severity-chip">{r.severityBand || r.severity}</span></div><div className='muted'>Priority {(r.priorityScore || r.priority_score || 0).toFixed?.(1) || 0}</div><div>{r.recommendedAction || r.recommended_action || 'watch'}</div></div>)}</div>
+web/lib/filters.ts:15:  const p = new URLSearchParams();
+web/lib/risk.ts:3:export function summarizeScoreSeverity(scores: Array<{ severity: ScoreSeverity }>) {
+web/app/about/page.tsx:7:    <AppShell title="About Sentinel" subtitle="Production-minded market and risk operator workspace." filters={filters} setFilters={apply}>
+web/app/about/page.tsx:8:      <section className="card"><h3>What Sentinel is</h3><p>Sentinel connects streaming market signals to incidents and investigation workflow with explicit trust and fallback labeling.</p></section>
+web/app/about/page.tsx:9:      <section className="card"><h3>Who it is for</h3><p>Analysts and operators triaging incidents, escalating cases, and reviewing governance posture.</p></section>
+web/app/about/page.tsx:10:      <section className="card"><h3>Pipeline</h3><p>Ticks → candles → features → scoring → alerts → incidents → cases → replay/governance views.</p></section>
+web/app/about/page.tsx:11:      <section className="card"><h3>Honest scope</h3><p>This build is production-minded but simplified: fallback scoring is deterministic, replay is metadata-first with derived timeline, and destructive governance actions are intentionally omitted.</p></section>
+web/app/command-center/page.tsx:24:    <TrustStrip trustState={data?.trust?.state} modelUnavailable={Boolean(data?.trust?.fallback_mode)} dqWarning={data?.trust?.dq_status} />
+web/app/command-center/page.tsx:25:    <div className="grid-3"><div className="card"><h3>Open incidents</h3><p>{data.openIncidents || data.open_incidents || 0}</p></div><div className="card"><h3>High risk</h3><p>{data.highRiskCount || data.high_risk_count || 0}</p></div><div className="card"><h3>Backlog delta</h3><p>{data.backlogDelta || 0}</p></div></div>
+web/app/incident/[id]/page.tsx:3:import { useParams, useRouter } from 'next/navigation'
+web/app/incident/[id]/page.tsx:9:  const params = useParams<{ id: string }>()
+web/app/incident/[id]/page.tsx:14:  useEffect(() => { if (params?.id) api.incident(params.id).then(setData) }, [params?.id])
+web/app/incident/[id]/page.tsx:17:    if (!params?.id) return
+web/app/incident/[id]/page.tsx:20:      const created = await api.promoteIncidentCase(params.id, 'promoted from incident detail')
+web/app/incident/[id]/page.tsx:32:  return <AppShell title={`Incident ${params?.id || ''}`} subtitle="Score evidence and explanation">
+web/app/incident/[id]/page.tsx:33:    <div className="card"><h3>Score header</h3><p>Priority {data?.score_header?.priority ?? '-'}</p></div>
+web/app/incident/[id]/page.tsx:34:    <section className="card"><h3>Explanation</h3><p>{data?.explanation_text || '-'}</p></section>
+web/app/incident/[id]/page.tsx:35:    <section className="card"><h3>Model lineage</h3><p>{data?.model_version || 'unknown'}</p></section>
+web/app/glossary/page.tsx:9:  ['Anomaly', 'Deviation from expected short-window market behavior.'],
+web/app/glossary/page.tsx:13:  ['Fallback mode', 'Deterministic scoring path used when model artifacts are unavailable.'],
+web/app/glossary/page.tsx:14:  ['Model registry', 'Source of model versions and artifact lineage metadata.'],
+web/app/glossary/page.tsx:17:export default function GlossaryPage() {
+web/app/glossary/page.tsx:20:    <AppShell title="Explain / Glossary" subtitle="Plain-English terms for operators and non-experts." filters={filters} setFilters={apply}>
+web/app/glossary/page.tsx:21:      <section className="card">
+web/app/globals.css:11:  --warn: #d97706;
+web/app/globals.css:14:* { box-sizing: border-box; margin: 0; padding: 0; }
+web/app/globals.css:15:html, body { min-height: 100%; font-family: Inter, system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+web/app/globals.css:19:.login-card { width: min(430px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 24px; box-shadow: 0 8px 28px rgba(15,23,42,.08); }
+web/app/globals.css:20:.login-card h1 { font-size: 30px; margin-bottom: 8px; }
+web/app/globals.css:21:.login-card p { color: var(--muted); margin-bottom: 16px; }
+web/app/globals.css:23:input, select, button { border-radius: 10px; border: 1px solid var(--line); padding: 10px 12px; font-size: 14px; background: #fff; color: var(--text); }
+web/app/globals.css:24:button { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 700; cursor: pointer; }
+web/app/globals.css:26:.error-text { color: var(--err); font-weight: 600; }
+web/app/globals.css:29:.left-nav { background: var(--nav); color: var(--navText); padding: 22px 16px; border-right: 1px solid #1e293b; position: sticky; top: 0; height: 100vh; }
+web/app/globals.css:32:.left-nav .muted { color: #94a3b8; margin-top: 6px; margin-bottom: 20px; }
+web/app/globals.css:37:.sticky-top { position: sticky; top: 0; z-index: 20; background: var(--bg); padding-bottom: 10px; }
+web/app/globals.css:38:.topbar { display:flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+web/app/globals.css:39:.topbar h1 { font-size: 28px; }
+web/app/globals.css:40:.muted { color: var(--muted); }
+web/app/globals.css:41:.pill { border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 11px; font-size:12px; }
+web/app/globals.css:45:.filter-strip { display:flex; gap:8px; padding: 10px; border:1px solid var(--line); border-radius: 12px; background:#fff; margin-bottom: 14px; }
+web/app/globals.css:51:.card { background: var(--panel); border:1px solid var(--line); border-radius: 14px; padding: 14px; }
+web/app/globals.css:52:.card h3 { margin-bottom: 8px; font-size: 15px; }
+web/app/globals.css:55:.empty-state { border: 1px dashed var(--line); color: var(--muted); background: #f8fafc; border-radius: 10px; padding: 12px; }
+web/app/globals.css:59:.table th { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+web/app/globals.css:60:.badge { font-size: 11px; border-radius: 999px; padding: 3px 8px; border: 1px solid var(--line); }
+web/app/globals.css:64:.trust-strip { display:flex; justify-content:space-between; gap:10px; align-items:center; border:1px solid var(--line); border-left:4px solid var(--ok); border-radius: 12px; padding:10px 12px; background:#fff; }
+web/app/globals.css:65:.trust-strip.degraded { border-left-color: var(--warn); background: #fffaf0; }
+web/app/globals.css:66:.trust-strip.unavailable { border-left-color: var(--err); background: #fef2f2; }
+web/app/globals.css:70:.map-cell { border:1px solid var(--line); border-radius:8px; padding:10px; cursor:pointer; min-height:66px; background:#fff; }
+web/app/globals.css:84:.sparkline { min-height: 44px; border:1px dashed var(--line); border-radius:10px; padding:8px; background:#f8fbff; }
+web/app/globals.css:85:.metric-bars { display:grid; gap:6px; }
+web/app/globals.css:86:.severity-chip { border-radius:999px; padding:2px 8px; border:1px solid var(--line); font-size:11px; }
+web/app/globals.css:88:.map-cell.selected { outline:2px solid var(--blue); }
+web/app/globals.css:89:.map-legend { border:1px solid var(--line); border-radius:10px; padding:10px; background:#fff; }
+web/app/globals.css:90:.timeline-lane { border:1px dashed var(--line); border-radius:10px; padding:8px; margin:6px 0; }
+web/app/trust/page.tsx:16:        <div className="card"><h3>DQ metrics</h3><p>Warnings: {data?.dqTotals?.warnings ?? 0}</p></div>
+web/app/trust/page.tsx:17:        <div className="card"><h3>Model degraded</h3><p>{data.modelDegradedCount ?? 0}</p></div>
+web/app/trust/page.tsx:18:        <div className="card"><h3>Cache health</h3><p>{data.cacheHealth || 'ok'}</p></div>
+web/app/api/sse/alerts/route.ts:3:    start(controller) {
+web/app/api/sse/alerts/route.ts:9:      setTimeout(() => { clearInterval(timer); controller.close() }, 55000)

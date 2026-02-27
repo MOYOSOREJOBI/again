@@ -1,0 +1,6 @@
+- gate: ./scripts/gate.sh
+- docker required for runtime S2-S6
+- playwright docker runner: ./scripts/playwright-docker.sh
+- demo smoke: ./scripts/demo-smoke.sh
+- prometheus check: ./scripts/prom_up_check.py
+- logs dir: docs/audit/20260227T053420Z/logs
