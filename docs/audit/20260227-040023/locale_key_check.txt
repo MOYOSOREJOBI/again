@@ -1,0 +1,2 @@
+locale_files 0
+no locale json files found

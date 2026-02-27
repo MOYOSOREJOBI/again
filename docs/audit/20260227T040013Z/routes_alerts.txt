@@ -1,0 +1,15 @@
+87:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+88:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+91:	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+109:	r.Get("/metrics", metrics.Handler)
+110:	r.Get("/sse/alerts", sse)
+112:	r.Post("/alerts/{id}/ack", func(w http.ResponseWriter, r *http.Request) {
+128:	r.Post("/incidents/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
+163:	r.Post("/cases", func(w http.ResponseWriter, r *http.Request) {
+180:	r.Post("/incidents/{id}/promote-case", func(w http.ResponseWriter, r *http.Request) {
+201:	r.Get("/cases", func(w http.ResponseWriter, r *http.Request) {
+225:	r.Get("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
+254:	r.Patch("/cases/{id}", func(w http.ResponseWriter, r *http.Request) {
+295:	r.Post("/cases/{id}/notes", func(w http.ResponseWriter, r *http.Request) {
+318:	r.Post("/cases/{id}/evidence", func(w http.ResponseWriter, r *http.Request) {
+343:	r.Post("/cases/{id}/disposition", func(w http.ResponseWriter, r *http.Request) {
