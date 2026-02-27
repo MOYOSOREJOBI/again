@@ -18,10 +18,10 @@ const NAV_ITEMS = [
 ]
 
 export function useGlobalFilters() {
-  const [filters, setFilters] = useState<GlobalFilters>({ time_window: '24h' })
+  const [filters, setFilters] = useState<GlobalFilters>({ window: '24h' })
   useEffect(() => {
     const raw = localStorage.getItem('sentinel_global_filters')
-    if (raw) setFilters({ time_window: '24h', ...JSON.parse(raw) })
+    if (raw) setFilters({ window: '24h', ...JSON.parse(raw) })
   }, [])
   const apply = (next: Partial<GlobalFilters>) => {
     setFilters((prev) => {
@@ -91,10 +91,10 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
         </header>
         {setFilters ? (
           <div className="filter-strip sticky-filters">
-            <select value={filters?.time_window || '24h'} onChange={(e) => setFilters({ time_window: e.target.value as any })}>
-              <option value="now">now</option><option value="1h">1h</option><option value="24h">24h</option><option value="7d">7d</option>
+            <select value={filters?.window || '24h'} onChange={(e) => setFilters({ window: e.target.value as any })}>
+              <option value="1h">1h</option><option value="24h">24h</option><option value="7d">7d</option>
             </select>
-            <input placeholder="country" value={filters?.country || ''} onChange={(e) => setFilters({ country: e.target.value })} />
+            <input placeholder="country" value={filters?.countryCode || ''} onChange={(e) => setFilters({ countryCode: e.target.value })} />
             <input placeholder="region" value={filters?.region || ''} onChange={(e) => setFilters({ region: e.target.value })} />
             <input placeholder="sector" value={filters?.sector || ''} onChange={(e) => setFilters({ sector: e.target.value })} />
             <input placeholder="industry" value={filters?.industry || ''} onChange={(e) => setFilters({ industry: e.target.value })} />

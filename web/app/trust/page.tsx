@@ -6,7 +6,7 @@ import { api, type GlobalFilters } from '../../lib/api'
 import { subscribeTrustPatches } from '../../lib/stream'
 
 export default function TrustPage() {
-  const [filters, setFilters] = useState<GlobalFilters>({ time_window: '24h' })
+  const [filters, setFilters] = useState<GlobalFilters>({ window: '24h' })
   const [data, setData] = useState<any>(null)
   useEffect(() => { api.trust(filters).then(setData) }, [JSON.stringify(filters)])
   useEffect(() => subscribeTrustPatches((p) => setData((d: any) => ({ ...(d || {}), ...p }))), [])
