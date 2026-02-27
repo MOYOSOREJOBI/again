@@ -17,8 +17,10 @@ import (
 	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/metrics"
 	"sentinel/internal/middleware"
 	qrm "sentinel/internal/query"
 	"sentinel/internal/rbac"
@@ -45,6 +47,11 @@ type filters struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8085)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := logging.New("query")
@@ -66,6 +73,9 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.CORS)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"service": "query", "version": "dev", "links": []string{"/healthz", "/readyz", "/metrics", "/docs"}})
+	})
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
 			http.Error(w, "not ready", 503)
@@ -73,6 +83,7 @@ func main() {
 		}
 		_, _ = w.Write([]byte("ok"))
 	})
+	r.Get("/metrics", metrics.Handler)
 
 	r.Group(func(pr chi.Router) {
 		pr.Use(requireRole(pub, "read"))
