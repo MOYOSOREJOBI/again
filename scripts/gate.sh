@@ -34,7 +34,7 @@ fi
 
 echo "=== GATE: Playwright (Docker compose service) ==="
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  ./scripts/runtime-proof.sh
+  ./scripts/playwright-docker.sh
 else
   echo "SKIP: Docker missing; Playwright cannot be proven." | tee -a "${LOG_DIR}/playwright.log"
   echo "docker unavailable" > "${PROOF_DIR}/SKIP_PLAYWRIGHT_DOCKER.txt"
