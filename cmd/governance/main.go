@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -93,6 +94,7 @@ func main() {
 		httpx.JSON(w, http.StatusOK, out)
 	})
 
+	r.With(middleware.RateLimit(rateLimitSubjectKey("gov", pub), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 	r.With(middleware.RateLimit(rateLimitSubjectKey("gov"), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
@@ -123,6 +125,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow", pub), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow"), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
@@ -234,7 +237,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -262,6 +265,21 @@ func readinessHandler(p pinger) http.HandlerFunc {
 
 var errNotReady = errors.New("not ready")
 
+func rateLimitSubjectKey(prefix string, pub *rsa.PublicKey) func(*http.Request) string {
+	return func(r *http.Request) string {
+		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
+			token := strings.TrimSpace(strings.TrimPrefix(authz, "Bearer "))
+			if token != "" {
+				if claims, err := auth.Parse(token, pub); err == nil {
+					return prefix + ":sub:" + claims.Subject
+				}
+				return prefix + ":authz:" + token
+			}
+		}
+		if c, err := r.Cookie("sentinel_token"); err == nil && c.Value != "" {
+			if claims, err := auth.Parse(c.Value, pub); err == nil {
+				return prefix + ":sub:" + claims.Subject
+			}
 func rateLimitSubjectKey(prefix string) func(*http.Request) string {
 	return func(r *http.Request) string {
 		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
