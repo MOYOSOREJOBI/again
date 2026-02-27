@@ -95,6 +95,7 @@ func main() {
 	})
 
 	r.With(middleware.RateLimit(rateLimitSubjectKey("gov", pub), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("gov"), 10, 1*time.Minute)).Post("/models/deploy", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "*") || rbac.Allowed(claims.Role, "model:deploy")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -125,6 +126,7 @@ func main() {
 	})
 
 	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow", pub), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
+	r.With(middleware.RateLimit(rateLimitSubjectKey("workflow"), 30, 1*time.Minute)).Post("/replay/start", func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := authn(r, pub)
 		if !ok || !(rbac.Allowed(claims.Role, "replay:write") || rbac.Allowed(claims.Role, "*")) {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -278,6 +280,12 @@ func rateLimitSubjectKey(prefix string, pub *rsa.PublicKey) func(*http.Request) 
 			if claims, err := auth.Parse(c.Value, pub); err == nil {
 				return prefix + ":sub:" + claims.Subject
 			}
+func rateLimitSubjectKey(prefix string) func(*http.Request) string {
+	return func(r *http.Request) string {
+		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
+			return prefix + ":" + authz
+		}
+		if c, err := r.Cookie("sentinel_token"); err == nil && c.Value != "" {
 			return prefix + ":cookie:" + c.Value
 		}
 		return prefix + ":ip:" + r.RemoteAddr
