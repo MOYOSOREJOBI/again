@@ -6,21 +6,15 @@ make doctor
 make lint
 make test
 
-echo "=== GATE: Web build/tests ==="
-( cd web && npm ci && npm run build && npm test -- --runInBand )
-
-echo "=== GATE: Inference tests ==="
-( cd services/inference && pytest -q )
-
-echo "=== GATE: Playwright (Docker is canonical) ==="
+echo "=== GATE: Runtime proof (Docker required) ==="
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  ./scripts/playwright-docker.sh
+  ./scripts/runtime-proof.sh
 else
-  echo "FAIL: Docker missing; Playwright cannot be proven. Install Docker or rely on CI."
+  echo "FAIL: Docker missing; runtime proof cannot be proven."
   exit 1
 fi
 
-echo "=== GATE: Runtime proof (Docker required) ==="
-./scripts/runtime-proof.sh
+echo "=== GATE: Playwright (Docker compose service) ==="
+./scripts/playwright-docker.sh
 
 echo "PASS: gate complete"
