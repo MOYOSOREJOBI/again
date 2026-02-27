@@ -49,6 +49,22 @@ func windowSQL(tw string) string {
 func whereClause(f QueueFilters) (string, []any) {
 	args := []any{}
 	where := windowSQL(f.Window)
+	if f.Window == "custom" {
+		from, to := f.From, f.To
+		if !from.IsZero() && !to.IsZero() && to.Before(from) {
+			from, to = to, from
+		}
+		switch {
+		case !from.IsZero() && !to.IsZero():
+			args = append(args, from, to)
+			where = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(args)-1, len(args))
+		case !from.IsZero():
+			args = append(args, from)
+			where = fmt.Sprintf("i.last_activity_at >= $%d", len(args))
+		case !to.IsZero():
+			args = append(args, to)
+			where = fmt.Sprintf("i.last_activity_at <= $%d", len(args))
+		}
 	if f.Window == "custom" && !f.From.IsZero() && !f.To.IsZero() {
 	if !f.From.IsZero() && !f.To.IsZero() {
 		args = append(args, f.From, f.To)
