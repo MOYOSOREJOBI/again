@@ -80,7 +80,6 @@ func main() {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
 			key := cache.QueueKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
-			key := cache.QueueKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlQueue, func() ([]qrm.QueueRow, error) {
 				return qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
@@ -94,7 +93,6 @@ func main() {
 			f := parseFilters(r)
 			claims, _ := authn(r, pub)
 			key := cache.CommandCenterKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
-			key := cache.CommandCenterKey(claims.Role, f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
 				return qrm.LoadCommandCenter(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
@@ -107,7 +105,6 @@ func main() {
 		pr.Get("/trust", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.TrustKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
-			key := cache.TrustKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlSummary, func() (map[string]any, error) {
 				return qrm.LoadTrust(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
@@ -120,7 +117,6 @@ func main() {
 		pr.Get("/world-map", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.WorldMapKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
-			key := cache.WorldMapKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			countries, err := cache.GetOrLoadJSON(r.Context(), key, ttlWorldMap, func() ([]qrm.CountryAgg, error) {
 				return qrm.LoadWorldMap(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 			})
@@ -133,7 +129,6 @@ func main() {
 		pr.Get("/executive-summary", func(w http.ResponseWriter, r *http.Request) {
 			f := parseFilters(r)
 			key := cache.ExecutiveKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Locale, f.Window)
-			key := cache.ExecutiveKey(f.Region, f.CountryCode, f.Sector, f.Industry, f.Venue, f.Symbol, f.Window)
 			out, err := cache.GetOrLoadJSON(r.Context(), key, ttlExecutive, func() (map[string]any, error) {
 				topRisks, err := qrm.LoadQueue(r.Context(), pool, qrm.QueueFilters{Window: f.Window, From: f.From, To: f.To, CountryCode: f.CountryCode, Region: f.Region, Sector: f.Sector, Industry: f.Industry, Venue: f.Venue, Symbol: f.Symbol, Locale: f.Locale})
 				if err != nil {
@@ -153,8 +148,6 @@ func main() {
 				}
 				industryConcentration := []map[string]any{}
 				industryWhere, industryArgs := buildExecutiveIndustryWhere(f)
-				industryArgs := []any{}
-				industryWhere := windowSQLForExecutive(f.Window)
 				if f.Window == "custom" && !f.From.IsZero() && !f.To.IsZero() {
 					industryArgs = append(industryArgs, f.From, f.To)
 					industryWhere = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(industryArgs)-1, len(industryArgs))
@@ -354,9 +347,6 @@ func parseFilters(r *http.Request) filters {
 	tw := normalizeWindow(q.Get("window"))
 	if tw == "" {
 		tw = normalizeWindow(q.Get("time_window"))
-	tw := q.Get("window")
-	if tw == "" {
-		tw = q.Get("time_window")
 	}
 	if tw == "" {
 		tw = "24h"

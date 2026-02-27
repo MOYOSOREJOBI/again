@@ -65,10 +65,6 @@ func whereClause(f QueueFilters) (string, []any) {
 			args = append(args, to)
 			where = fmt.Sprintf("i.last_activity_at <= $%d", len(args))
 		}
-	if f.Window == "custom" && !f.From.IsZero() && !f.To.IsZero() {
-	if !f.From.IsZero() && !f.To.IsZero() {
-		args = append(args, f.From, f.To)
-		where = fmt.Sprintf("i.last_activity_at BETWEEN $%d AND $%d", len(args)-1, len(args))
 	}
 	add := func(col string, val any, skip bool) {
 		if skip {
