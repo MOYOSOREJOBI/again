@@ -8,16 +8,16 @@ echo "=== Playwright Docker runner ==="
 echo "Image: ${PW_IMAGE}"
 
 docker run --rm -t \
-  --network host \
   -v "${ROOT}:/repo" \
   -w /repo/web \
-  -e CI=true \
+  -e CI=1 \
   -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+  -e npm_config_registry=https://registry.npmjs.org/ \
   "${PW_IMAGE}" bash -lc '
     set -euo pipefail
     node -v
     npm -v
     npm ci
     npx playwright --version
-    npm run test:e2e
+    npx playwright test
   '
