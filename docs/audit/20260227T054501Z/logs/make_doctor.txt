@@ -1,6 +1,0 @@
-$ make doctor
-./scripts/doctor.sh
-WARN missing: docker (required for demo/integration)
-WARN jwt private key missing; run make dev-keys
-WARN jwt public key missing; run make dev-keys
-doctor completed with warnings

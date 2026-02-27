@@ -1,8 +1,0 @@
-gateway-api http://localhost:8080
-query http://localhost:8081
-alerts http://localhost:8082
-governance http://localhost:8083
-inference http://localhost:8084
-web http://localhost:3000
-prometheus http://localhost:9090
-grafana http://localhost:3001

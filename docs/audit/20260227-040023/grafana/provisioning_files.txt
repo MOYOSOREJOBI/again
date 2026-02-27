@@ -1,2 +1,0 @@
-grafana/provisioning/datasources/datasource.yml
-grafana/provisioning/dashboards/dashboards.yml

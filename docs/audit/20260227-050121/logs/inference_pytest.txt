@@ -1,3 +1,0 @@
-$ (cd services/inference && pytest -q)
-.............                                                            [100%]
-13 passed in 0.31s

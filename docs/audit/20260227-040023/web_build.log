@@ -1,3 +1,0 @@
-$ bash -lc cd web && npm run build
-EXIT:0
-\n$ bash -lc cd web && npm run build

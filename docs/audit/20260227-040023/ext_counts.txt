@@ -1,9 +1,0 @@
-.go: 78
-.ts: 21
-.tsx: 25
-.sql: 6
-.sh: 23
-.yml: 6
-.yaml: 2
-.json: 6
-.py: 17

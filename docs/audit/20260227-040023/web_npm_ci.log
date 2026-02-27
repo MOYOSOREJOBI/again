@@ -1,3 +1,0 @@
-$ bash -lc cd web && npm ci
-EXIT:0
-\n$ bash -lc cd web && npm ci

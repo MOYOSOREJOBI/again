@@ -1,0 +1,76 @@
+$ git status --porcelain
+?? docs/cleanup/
+$ git log --oneline -n 20
+e3b6775 query: add /debug/seed-status + tests; refactor audit/runtime-proof and Prometheus/Grafana checks
+eddb0e4 Merge pull request #54 from MOYOSOREJOBI/codex/improve-playwright-reliability-in-compose
+677d67f Run Playwright via compose e2e service
+593a0ac Merge pull request #53 from MOYOSOREJOBI/codex/implement-end-to-end-sentinel-audit-process-ixacgt
+15ad6d5 Merge branch 'NEWMAIN' into codex/implement-end-to-end-sentinel-audit-process-ixacgt
+a63324f audit: always emit scored result even when gate commands fail
+6003b37 Merge pull request #52 from MOYOSOREJOBI/codex/implement-end-to-end-sentinel-audit-process-sv2837
+888e740 Merge branch 'NEWMAIN' into codex/implement-end-to-end-sentinel-audit-process-sv2837
+7f7e65b ci: align gate/runtime/playwright and strict audit rubric
+2e3c3cb Merge pull request #51 from MOYOSOREJOBI/codex/implement-end-to-end-sentinel-audit-process-xlnily
+44ed85a Merge branch 'NEWMAIN' into codex/implement-end-to-end-sentinel-audit-process-xlnily
+8ad5554 audit: make 100% contingent on verifiable S1-S10 proofs
+d782c81 Merge pull request #50 from MOYOSOREJOBI/codex/implement-end-to-end-sentinel-audit-process
+2cd685d ci: enforce docker runtime audit and playwright proof
+28128ff Merge pull request #49 from MOYOSOREJOBI/codex/implement-final-fixes-for-sentinel-45t0kx
+20054fe report: capture full playwright failure logs for progress audit
+b93fb44 Merge pull request #48 from MOYOSOREJOBI/codex/implement-final-fixes-for-sentinel-u45f42
+02a87fd Merge branch 'NEWMAIN' into codex/implement-final-fixes-for-sentinel-u45f42
+8125dfa audit: fix scoring signals and log baseline checks
+418f986 Merge pull request #47 from MOYOSOREJOBI/codex/implement-final-fixes-for-sentinel-h9um68
+$ git diff --stat origin/work..HEAD || true
+$ rg -n "TODO\\b|FIXME\\b|HACK\\b" -S .
+$ du -ah . | sort -rh | head -n 50
+455M	.
+451M	./web/node_modules
+451M	./web
+275M	./web/node_modules/@next
+150M	./web/node_modules/@next/swc-linux-x64-musl/next-swc.linux-x64-musl.node
+150M	./web/node_modules/@next/swc-linux-x64-musl
+126M	./web/node_modules/@next/swc-linux-x64-gnu/next-swc.linux-x64-gnu.node
+126M	./web/node_modules/@next/swc-linux-x64-gnu
+102M	./web/node_modules/next/dist
+102M	./web/node_modules/next
+65M	./web/node_modules/next/dist/compiled
+22M	./web/node_modules/typescript/lib
+22M	./web/node_modules/typescript
+18M	./web/node_modules/next/dist/compiled/next-server
+13M	./web/node_modules/next/dist/server
+13M	./web/node_modules/next/dist/esm
+11M	./web/node_modules/next/dist/compiled/react-dom-experimental/cjs
+11M	./web/node_modules/next/dist/compiled/react-dom-experimental
+8.5M	./web/node_modules/typescript/lib/typescript.js
+8.0M	./web/node_modules/next/dist/compiled/react-dom
+7.9M	./web/node_modules/next/dist/compiled/react-dom/cjs
+6.7M	./web/node_modules/next/dist/server/lib
+6.4M	./web/node_modules/tailwindcss
+5.9M	./web/node_modules/next/dist/server/lib/squoosh
+5.8M	./web/node_modules/typescript/lib/tsc.js
+5.4M	./web/node_modules/recharts
+5.1M	./web/node_modules/next/dist/esm/server
+4.9M	./web/node_modules/lodash
+4.4M	./web/node_modules/react-dom
+4.3M	./web/node_modules/tailwindcss/peers/index.js
+4.3M	./web/node_modules/tailwindcss/peers
+4.2M	./web/node_modules/next/dist/build
+4.2M	./web/node_modules/caniuse-lite
+4.1M	./web/node_modules/next/dist/server/lib/squoosh/avif
+4.1M	./web/node_modules/caniuse-lite/data
+3.3M	./web/node_modules/next/dist/client
+3.2M	./web/node_modules/next/dist/compiled/@vercel
+3.2M	./web/node_modules/@types
+3.1M	./web/node_modules/next/dist/esm/build
+3.1M	./web/node_modules/next/dist/compiled/next-server/app-page-experimental.runtime.dev.js.map
+2.9M	./web/node_modules/next/dist/compiled/@vercel/og
+2.8M	./web/node_modules/next/dist/compiled/next-server/app-page.runtime.dev.js.map
+2.6M	./web/node_modules/recharts/umd
+2.6M	./web/node_modules/next/dist/server/lib/squoosh/avif/avif_node_enc.wasm
+2.6M	./web/node_modules/next/dist/compiled/webpack
+2.5M	./web/node_modules/react-dom/cjs
+2.5M	./web/node_modules/next/dist/compiled/webpack/bundle5.js
+2.5M	./web/node_modules/next/dist/client/components
+2.4M	./web/node_modules/next/dist/esm/client
+2.4M	./web/node_modules/caniuse-lite/data/features

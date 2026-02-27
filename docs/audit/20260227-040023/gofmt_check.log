@@ -1,3 +1,0 @@
-$ bash -lc gofmt -l .
-EXIT:0
-\n$ gofmt -l .

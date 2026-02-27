@@ -1,6 +1,0 @@
-- baseline: make doctor / make lint / make test
-- gate: ./scripts/gate.sh
-- docker runtime smoke: ./scripts/demo-smoke.sh
-- playwright docker runner: ./scripts/playwright-docker.sh
-- prometheus check: ./scripts/prom_up_check.py
-- logs dir: docs/audit/20260227T054501Z/logs
