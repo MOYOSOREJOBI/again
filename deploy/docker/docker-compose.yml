@@ -70,6 +70,15 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       topics-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/service", "healthcheck"]
+      interval: 5s
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   simulator:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: simulator}}
@@ -84,6 +93,15 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       topics-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/service", "healthcheck"]
+      interval: 5s
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   features:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: features}}
@@ -92,6 +110,15 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       topics-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/service", "healthcheck"]
+      interval: 5s
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   inference:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile.inference}
@@ -112,11 +139,15 @@ services:
     depends_on:
       migrate: {condition: service_completed_successfully}
       topics-init: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+      redis: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:8083/readyz >/dev/null"]
+      test: ["CMD", "/service", "healthcheck"]
       interval: 5s
-      timeout: 3s
-      retries: 30
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   governance:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: governance}}
@@ -124,11 +155,13 @@ services:
     ports: ["8084:8084"]
     depends_on:
       migrate: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:8084/readyz >/dev/null"]
+      test: ["CMD", "/service", "healthcheck"]
       interval: 5s
-      timeout: 3s
-      retries: 30
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   query:
     build: {context: ../.., dockerfile: deploy/docker/Dockerfile-go, args: {SERVICE: query}}
@@ -136,11 +169,13 @@ services:
     ports: ["8085:8085"]
     depends_on:
       migrate: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:8085/readyz >/dev/null"]
+      test: ["CMD", "/service", "healthcheck"]
       interval: 5s
-      timeout: 3s
-      retries: 30
+      timeout: 2s
+      retries: 24
+      start_period: 10s
 
   web:
     image: node:20-alpine
@@ -166,4 +201,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - "../../grafana/sentinel-dashboard.json:/var/lib/grafana/dashboards/sentinel-dashboard.json:ro"
+      - "../../grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro"
+      - "../../grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro"
+      - "../../grafana/dashboards:/var/lib/grafana/dashboards:ro"
     ports: ["3001:3000"]
