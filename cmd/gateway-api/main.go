@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+
+	"sentinel/internal/rediskv"
 	"syscall"
 	"time"
 
@@ -156,14 +158,25 @@ type loginLimitEntry struct {
 }
 
 var loginAttempts sync.Map
+var loginRedis = rediskv.NewFromEnv()
 
 func loginAllowed(ip, email string) bool {
 	key := "login:" + strings.ToLower(strings.TrimSpace(email)) + ":" + ip
+	window := 5 * time.Minute
+	if loginRedis != nil && loginRedis.Enabled() {
+		n, err := loginRedis.Incr(context.Background(), key)
+		if err == nil {
+			if n == 1 {
+				_ = loginRedis.Expire(context.Background(), key, window)
+			}
+			return n <= 5
+		}
+	}
 	now := time.Now()
-	v, _ := loginAttempts.LoadOrStore(key, loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)})
+	v, _ := loginAttempts.LoadOrStore(key, loginLimitEntry{Count: 0, Reset: now.Add(window)})
 	e := v.(loginLimitEntry)
 	if now.After(e.Reset) {
-		e = loginLimitEntry{Count: 0, Reset: now.Add(5 * time.Minute)}
+		e = loginLimitEntry{Count: 0, Reset: now.Add(window)}
 	}
 	e.Count++
 	loginAttempts.Store(key, e)
