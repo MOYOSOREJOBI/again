@@ -122,6 +122,12 @@ def build_output(msg: dict, models: dict | None = None) -> dict:
     return out
 
 
+
+
+@app.get('/')
+def root():
+    return jsonify({'service': 'inference', 'version': 'dev', 'links': ['/healthz', '/readyz', '/metrics', '/docs']})
+
 @app.get('/healthz')
 def healthz():
     return 'ok'

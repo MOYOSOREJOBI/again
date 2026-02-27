@@ -17,8 +17,10 @@ import (
 	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/httpx"
 	"sentinel/internal/logging"
+	"sentinel/internal/metrics"
 	"sentinel/internal/middleware"
 	qrm "sentinel/internal/query"
 	"sentinel/internal/rbac"
@@ -45,6 +47,11 @@ type filters struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8085)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := logging.New("query")
@@ -66,12 +73,42 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.CORS)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"service": "query", "version": "dev", "links": []string{"/healthz", "/readyz", "/metrics", "/docs"}})
+	})
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
 			http.Error(w, "not ready", 503)
 			return
 		}
 		_, _ = w.Write([]byte("ok"))
+	})
+	r.Get("/metrics", metrics.Handler)
+
+	r.Get("/debug/seed-status", func(w http.ResponseWriter, r *http.Request) {
+		type row struct {
+			Name  string
+			Query string
+		}
+		checks := []row{
+			{Name: "raw_ticks", Query: "SELECT count(*) FROM raw_ticks"},
+			{Name: "candles", Query: "SELECT count(*) FROM candles"},
+			{Name: "features", Query: "SELECT count(*) FROM features"},
+			{Name: "scores", Query: "SELECT count(*) FROM scores"},
+			{Name: "alerts", Query: "SELECT count(*) FROM alerts"},
+			{Name: "incidents", Query: "SELECT count(*) FROM incidents"},
+			{Name: "cases", Query: "SELECT count(*) FROM cases"},
+		}
+		out := map[string]int64{}
+		for _, c := range checks {
+			var n int64
+			if err := pool.QueryRow(r.Context(), c.Query).Scan(&n); err != nil {
+				http.Error(w, "internal", http.StatusInternalServerError)
+				return
+			}
+			out[c.Name] = n
+		}
+		httpx.JSON(w, http.StatusOK, out)
 	})
 
 	r.Group(func(pr chi.Router) {

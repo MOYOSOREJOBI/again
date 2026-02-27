@@ -22,10 +22,12 @@ import (
 	"sentinel/internal/cache"
 	"sentinel/internal/config"
 	"sentinel/internal/db"
+	"sentinel/internal/healthcheck"
 	"sentinel/internal/httpx"
 	"sentinel/internal/incidents"
 	"sentinel/internal/kafka"
 	"sentinel/internal/logging"
+	"sentinel/internal/metrics"
 	"sentinel/internal/middleware"
 	"sentinel/internal/rbac"
 
@@ -38,6 +40,11 @@ var subs = struct {
 }{}
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		port := healthcheck.MustPort("PORT", 8083)
+		os.Exit(healthcheck.Run(port, "/readyz"))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := logging.New("alerts")
@@ -78,6 +85,9 @@ func main() {
 		return claims.Subject, true
 	}))
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]any{"service": "alerts", "version": "dev", "links": []string{"/healthz", "/readyz", "/metrics", "/docs"}})
+	})
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
@@ -95,6 +105,8 @@ func main() {
 		}
 		w.Write([]byte("ok"))
 	})
+
+	r.Get("/metrics", metrics.Handler)
 	r.Get("/sse/alerts", sse)
 
 	r.Post("/alerts/{id}/ack", func(w http.ResponseWriter, r *http.Request) {
