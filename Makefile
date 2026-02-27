@@ -1,7 +1,7 @@
 COMPOSE=docker compose -f deploy/docker/docker-compose.yml
 FAST_COMPOSE=docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.fast.yml
 
-.PHONY: help doctor lint dev-keys up down migrate topics seed demo demo-fast screenshot-smoke browser-validate verify-screenshots test unit integration-test integration-suite replay-test security-test demo-smoke verify release-gate logs status
+.PHONY: help doctor lint dev-keys up down migrate topics seed smoke demo demo-fast screenshot-smoke browser-validate verify-screenshots test unit integration-test integration-suite replay-test security-test demo-smoke verify release-gate logs status
 
 help: ## Show available targets
 	@echo "Sentinel Platform - Available targets:"
@@ -34,6 +34,9 @@ topics:
 
 seed:
 	POSTGRES_URL=postgres://sentinel:sentinel@localhost:5432/sentinel?sslmode=disable go run ./scripts/seed-users.go
+
+smoke:
+	./scripts/smoke.sh
 
 demo:
 	./scripts/run-demo.sh default
