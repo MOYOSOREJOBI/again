@@ -1,52 +1,39 @@
-# Cleanup Report
+# Final Cleanup Report
 
-## A) Deleted, archived, kept
+## A) Deleted / archived / kept
 
-### Deleted from git tracking (generated noise)
-- `docs/audit/<timestamp>/**`
-- `docs/progress/<timestamp>/**`
+### Deleted from tracking
+- No source code directories were deleted in this cleanup pass.
+- Duplicate `.gitignore` entries were removed to reduce maintenance noise.
 
-Rationale: generated snapshots and logs belong in CI artifacts, not source control.
+### Archived / artifact-only
+- `docs/audit/**` and `docs/progress/**` remain artifact-only via `.gitignore`, with canonical READMEs kept as source-of-truth.
 
-### Kept in git (source-of-truth docs)
-- `docs/audit/README.md`
-- `docs/progress/README.md`
-- existing core docs at repo root and `docs/` (architecture/runbook/API/etc.)
-
-### Ignore policy added
-- `docs/audit/**`
-- `docs/progress/**`
-- exceptions for canonical READMEs.
+### Kept
+- Core app and service code under `cmd/`, `internal/`, `services/`, `web/`.
+- Canonical audit/progress docs: `docs/audit/README.md`, `docs/progress/README.md`.
 
 ## B) Deadcode report summary
-- Attempted deadcode tooling install and `go mod tidy`.
-- Both blocked by network/proxy restrictions in this environment.
-- No code removed without proof.
+- `deadcode` tool execution was attempted but blocked by package proxy access restrictions in this environment.
+- No dead-code deletions were made without machine proof.
 
-Details: `docs/cleanup/DEADCODE.md`.
+## C) Web unused dependencies removed
+- No dependency removals were committed in this pass because registry access restrictions prevented reliable `npm ci` + dependency-prune verification.
+- Lint scope was expanded in `web/package.json` to cover `app`, `components`, `lib`, `e2e`, `scripts`.
 
-## C) Web unused deps removed list
-- None removed in this pass due environment restrictions and lack of reliable dependency-audit tool execution.
-- `npm ci` still fails with registry/proxy 403 in this environment.
-
-## D) Script behavior rules now
-- `runtime-proof.sh` emits machine-readable lines:
-  - `STATUS=PASS|FAIL|SKIP`
-  - `REASON=...`
-  - `PROOFS_DIR=...`
-  - `LOGS_DIR=...`
-- Docker missing => explicit SKIP marker file (`SKIP_DOCKER.txt`) and exit code 2 (not fake pass).
-- `gate.sh` propagates PASS/FAIL/SKIP consistently.
-- `audit.sh` records PASS/FAIL/SKIP and reason in `RESULT.md` plus machine-readable status lines.
+## D) Script behavior rules (PASS/FAIL/SKIP)
+- `runtime-proof.sh` emits machine-readable status lines and exits `2` when Docker is unavailable.
+- `gate.sh` now runs `playwright-docker.sh` for S10 proof instead of re-running runtime-proof.
+- SKIP behavior is explicit and produces proof markers (e.g., `SKIP_DOCKER.txt`).
 
 ## E) Remaining known gaps
-1. Runtime completeness still requires Docker-capable runner.
-2. `npm ci` blocked by registry proxy policy in current environment.
-3. Deadcode and dependency-prune automation blocked by Go proxy restrictions.
+- Full runtime proof requires Docker availability.
+- Go deadcode pruning remains pending until module proxy access allows `deadcode` installation.
+- Web dependency pruning remains pending until npm registry access allows deterministic reinstall + prune validation.
 
-## F) Next priorities
-1. Run cleanup validation in Docker-capable CI runner and capture runtime markers.
-2. Fix network policy for npm/go proxy access in CI.
-3. Re-run deadcode pass and remove proven unreachable functions.
-4. Add non-interactive web lint strategy (ESLint config or documented TypeScript-only lint policy).
-5. Add CI check to reject tracked timestamped audit/progress artifacts.
+## F) Next engineering priorities
+1. Run deadcode in CI (network-enabled) and prune confirmed unreachable functions.
+2. Add `eslint` as a pinned dev dependency and enforce `npm run lint` in CI.
+3. Add knip (or madge) report in CI artifact to track unused web files/deps.
+4. Add `make cleanup-report` target to regenerate docs/cleanup outputs reproducibly.
+5. Add a lightweight policy check that blocks conflict markers and generated artifact commits.
