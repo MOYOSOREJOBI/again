@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import { api, GlobalFilters, Role } from '../lib/api'
-import { Locale, localeFromStorage, setLocaleStorage, t } from '../lib/i18n'
+import { Locale, allLocales, applyLocale, localeFromStorage, setLocaleStorage, t } from '../lib/i18n'
 
 const NAV_ITEMS = [
   { href: '/command-center', label: 'Command Center', key: 'commandCenter' },
@@ -47,7 +47,9 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
   const [locale, setLocale] = useState<Locale>('en')
 
   useEffect(() => {
-    setLocale(localeFromStorage())
+    const l = localeFromStorage();
+    setLocale(l);
+    applyLocale(l)
     api.me().then((m) => setMe({ email: m.email || '', role: m.role || 'viewer' })).catch(() => router.replace('/'))
   }, [router])
 
@@ -71,19 +73,9 @@ export default function AppShell({ title, subtitle, children, filters, setFilter
             {subtitle ? <p className="muted">{subtitle}</p> : null}
           </div>
           <div className="user-meta">
-            <select
-              aria-label="Locale"
-              value={locale}
-              onChange={(e) => {
-                const next = e.target.value as Locale
-                setLocale(next)
-                setLocaleStorage(next)
-              }}
-            >
-              <option value="en">English</option>
-              <option value="fr">Français</option>
-              <option value="es">Español</option>
-              <option value="pt">Português</option>
+            <input aria-label="Locale search" placeholder="lang" onChange={(e)=>{ const q=e.target.value.toLowerCase(); const first=allLocales().find((l)=>l.toLowerCase().includes(q)); if(first){ setLocale(first); setLocaleStorage(first);} }} />
+            <select aria-label="Locale" value={locale} onChange={(e)=>{ const next=e.target.value as Locale; setLocale(next); setLocaleStorage(next); }}>
+              {allLocales().map((l)=><option key={l} value={l}>{l}</option>)}
             </select>
             <span className="pill role">{roleLabel}</span>
             <span className="pill">{me.email || 'signed in'}</span>
