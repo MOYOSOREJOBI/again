@@ -1,0 +1,7 @@
+67:	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+68:	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+71:	r.Get("/readyz", readinessHandler(pool))
+72:	r.Get("/active-models", func(w http.ResponseWriter, r *http.Request) {
+107:	r.Get("/metrics", metrics.Handler)
+181:	r.Get("/models", func(w http.ResponseWriter, r *http.Request) {
+279:		if authz := r.Header.Get("Authorization"); len(authz) > 7 {
