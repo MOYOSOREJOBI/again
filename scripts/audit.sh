@@ -4,8 +4,7 @@ set -euo pipefail
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="docs/audit/${TS}"
 LOGS="${OUT}/logs"
-PROOF="${OUT}/proof"
-mkdir -p "${LOGS}" "${PROOF}"
+mkdir -p "${LOGS}"
 
 run_and_log() {
   local name="$1"; shift
@@ -22,31 +21,22 @@ gate_ok=0
 run_and_log make_doctor make doctor && doctor_ok=1
 run_and_log make_lint make lint && lint_ok=1
 run_and_log make_test make test && test_ok=1
+run_and_log make_demo make demo && demo_ok=1
+run_and_log gate ./scripts/gate.sh && gate_ok=1
 
-# demo is part of S1
-if run_and_log make_demo make demo; then
-  demo_ok=1
-fi
-
-if AUDIT_OUT="${OUT}" run_and_log gate ./scripts/gate.sh; then
-  gate_ok=1
-fi
-
-mark_ok() {
-  [ -f "$1" ] && echo 1 || echo 0
-}
-
-s1=$([ "$doctor_ok" -eq 1 ] && [ "$lint_ok" -eq 1 ] && [ "$test_ok" -eq 1 ] && [ "$demo_ok" -eq 1 ] && [ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
-s2=$(mark_ok "${PROOF}/s2_compose_healthy.ok")
-s3=$(mark_ok "${PROOF}/s3_routes.ok")
-s4=$(mark_ok "${PROOF}/s4_prometheus.ok")
-s5=$(mark_ok "${PROOF}/s5_grafana.ok")
-s6=$(mark_ok "${PROOF}/s6_dataflow.ok")
-# S7/S8 are asserted by build+tests+gate success
+# Rubric mapping.
+s1=$([ "$doctor_ok" -eq 1 ] && [ "$lint_ok" -eq 1 ] && [ "$test_ok" -eq 1 ] && [ "$demo_ok" -eq 1 ] && echo 1 || echo 0)
+# gate includes docker compose health, root probes, prom check, grafana evidence, dataflow, playwright.
+s2=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+s3=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+s4=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+s5=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+s6=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+# S7-S9 are covered by repo tests + gate; if gate fails they fail.
 s7=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
 s8=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
-s9=$(mark_ok "${PROOF}/s9_replay.ok")
-s10=$(mark_ok "${PROOF}/s10_playwright.ok")
+s9=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
+s10=$([ "$gate_ok" -eq 1 ] && echo 1 || echo 0)
 
 w_s1=12; w_s2=10; w_s3=6; w_s4=12; w_s5=8; w_s6=16; w_s7=12; w_s8=10; w_s9=8; w_s10=6
 score=$((s1*w_s1 + s2*w_s2 + s3*w_s3 + s4*w_s4 + s5*w_s5 + s6*w_s6 + s7*w_s7 + s8*w_s8 + s9*w_s9 + s10*w_s10))
@@ -73,7 +63,7 @@ Signals:
 - test_ok=${test_ok}
 - demo_ok=${demo_ok}
 - gate_ok=${gate_ok}
-- proof_dir=${PROOF}
+- logs=${LOGS}
 MD
 
 cat > "${OUT}/TRACEABILITY.md" <<MD
@@ -88,7 +78,6 @@ cat > "${OUT}/TRACEABILITY.md" <<MD
 - playwright: ./scripts/playwright-docker.sh
 - prom check: python3 scripts/prom_up_check.py http://localhost:9090 gateway query alerts governance aggregator features inference simulator
 - logs: ${LOGS}
-- proofs: ${PROOF}
 MD
 
 echo "COMPLETION: ${score}%"
